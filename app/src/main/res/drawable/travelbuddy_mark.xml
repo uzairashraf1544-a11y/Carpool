@@ -1,0 +1,14 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="28dp"
+    android:height="28dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+  <!-- Leaf outline -->
+  <path
+      android:fillColor="#126847"
+      android:pathData="M17,8C8,10 5.9,16.17 3.82,21.34L5.71,22l1,-2.3C9,17 14,14 20,13.5V11C18.5,11 17.5,9.5 17,8z"/>
+  <!-- Route curve dot -->
+  <path
+      android:fillColor="#197A56"
+      android:pathData="M12,3c-2.76,0 -5,2.24 -5,5c0,3.53 5,9.5 5,9.5s5,-5.97 5,-9.5c0,-2.76 -2.24,-5 -5,-5zM12,10.5c-1.38,0 -2.5,-1.12 -2.5,-2.5s1.12,-2.5 2.5,-2.5 2.5,1.12 2.5,2.5 -1.12,2.5 -2.5,2.5z"/>
+</vector>

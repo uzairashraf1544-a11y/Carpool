@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "462593078430",
+    "project_id": "gen-lang-client-0717949368",
+    "storage_bucket": "gen-lang-client-0717949368.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:462593078430:android:19910d4cdfc1091c09f78f",
+        "android_client_info": {
+          "package_name": "com.aistudio.carpool.kjqxcv"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCZHGwbStoRxRly88n1YkrVN678Q09ygxQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,214 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function currentUserExists() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function currentUser() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isAdmin() {
+      return currentUserExists() && currentUser().data.role == 'ADMIN';
+    }
+
+    function validRole(role) {
+      return role in ['USER', 'ADMIN'];
+    }
+
+    function validMode(mode) {
+      return mode in ['PASSENGER', 'DRIVER'];
+    }
+
+    function validRideStatus(status) {
+      return status in [
+        'OFFLINE',
+        'AVAILABLE',
+        'PARTIALLY_FULL',
+        'FULL',
+        'RIDE_STARTED',
+        'COMPLETED',
+        'CANCELLED'
+      ];
+    }
+
+    function validRequestStatus(status) {
+      return status in [
+        'REQUESTED',
+        'ACCEPTED',
+        'REJECTED',
+        'CANCELLED',
+        'EXPIRED',
+        'COMPLETED'
+      ];
+    }
+
+    // =========================================================
+    // USERS
+    // =========================================================
+    match /users/{userId} {
+      // Personal user profiles are private. Admin can list/manage users.
+      allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
+
+      // App registration always creates a normal USER. Admin promotion is separate.
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.role == 'USER'
+        && validMode(request.resource.data.currentMode)
+        && validMode(request.resource.data.defaultRolePreference)
+        && (!('uid' in request.resource.data) || request.resource.data.uid == userId);
+
+      // Own profile updates: authorization/identity fields are immutable.
+      // Passenger/Driver is an operating preference, not a privileged role.
+      allow update: if signedIn() && (
+        (
+          request.auth.uid == userId
+          && request.resource.data.role == resource.data.role
+          && validRole(request.resource.data.role)
+          && (!('uid' in resource.data) || request.resource.data.uid == resource.data.uid)
+          && (!('uid' in request.resource.data) || request.resource.data.uid == userId)
+          && (!('email' in resource.data) || request.resource.data.email == resource.data.email)
+          && (!('employeeId' in resource.data) || request.resource.data.employeeId == resource.data.employeeId)
+          && (!('currentMode' in request.resource.data) || validMode(request.resource.data.currentMode))
+          && (!('defaultRolePreference' in request.resource.data) || validMode(request.resource.data.defaultRolePreference))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'name',
+            'phone',
+            'department',
+            'townshipLocation',
+            'defaultRolePreference',
+            'defaultDriverSeats',
+            'muteUntilTimestamp',
+            'currentMode',
+            'isPasswordChanged'
+          ])
+        )
+        ||
+        (
+          isAdmin()
+          && request.auth.uid != userId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role'])
+          && validRole(request.resource.data.role)
+        )
+      );
+
+      allow delete: if isAdmin() && request.auth.uid != userId;
+    }
+
+    // =========================================================
+    // RIDES
+    // =========================================================
+    match /rides/{rideId} {
+      allow read: if signedIn();
+
+      // currentMode is UX state, not an authorization privilege. Any signed-in
+      // employee may offer a ride, but only as themselves.
+      allow create: if signedIn()
+        && request.resource.data.driverId == request.auth.uid
+        && request.resource.data.totalSeats >= 1
+        && request.resource.data.availableSeats >= 0
+        && request.resource.data.availableSeats <= request.resource.data.totalSeats
+        && request.resource.data.status in ['AVAILABLE', 'PARTIALLY_FULL', 'FULL'];
+
+      // Driver owns the ride lifecycle; Admin can intervene if required.
+      allow update: if signedIn()
+        && request.resource.data.driverId == resource.data.driverId
+        && request.resource.data.totalSeats >= 1
+        && request.resource.data.availableSeats >= 0
+        && request.resource.data.availableSeats <= request.resource.data.totalSeats
+        && validRideStatus(request.resource.data.status)
+        && (isAdmin() || resource.data.driverId == request.auth.uid);
+
+      allow delete: if signedIn()
+        && (isAdmin() || resource.data.driverId == request.auth.uid);
+    }
+
+    // =========================================================
+    // RIDE REQUESTS
+    // =========================================================
+    match /rideRequests/{requestId} {
+      allow read: if signedIn() && (
+        isAdmin()
+        || resource.data.passengerId == request.auth.uid
+        || resource.data.driverId == request.auth.uid
+      );
+
+      // Any signed-in employee may request a ride as themselves. Mode is a UI
+      // choice and is intentionally not used as a server authorization gate.
+      allow create: if signedIn()
+        && request.resource.data.passengerId == request.auth.uid
+        && request.resource.data.status == 'REQUESTED';
+
+      allow update: if signedIn()
+        && request.resource.data.passengerId == resource.data.passengerId
+        && request.resource.data.driverId == resource.data.driverId
+        && request.resource.data.rideId == resource.data.rideId
+        && validRequestStatus(request.resource.data.status)
+        && (
+          isAdmin()
+          // Passenger may only cancel an unaccepted request.
+          || (
+            resource.data.passengerId == request.auth.uid
+            && resource.data.status == 'REQUESTED'
+            && request.resource.data.status == 'CANCELLED'
+          )
+          // Driver may answer a request or complete an accepted request.
+          || (
+            resource.data.driverId == request.auth.uid
+            && (
+              (resource.data.status == 'REQUESTED'
+                && request.resource.data.status in ['ACCEPTED', 'REJECTED'])
+              || (resource.data.status == 'ACCEPTED'
+                && request.resource.data.status == 'COMPLETED')
+            )
+          )
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    // =========================================================
+    // OPTIONAL PASSENGER DEMAND MODEL
+    // =========================================================
+    match /passengerNeeds/{needId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.passengerId == request.auth.uid;
+      allow update: if signedIn()
+        && request.resource.data.passengerId == resource.data.passengerId
+        && (isAdmin() || resource.data.passengerId == request.auth.uid);
+      allow delete: if signedIn()
+        && (isAdmin() || resource.data.passengerId == request.auth.uid);
+    }
+
+    // =========================================================
+    // SUSTAINABILITY / ADMIN DATA
+    // =========================================================
+    match /systemConfig/{configId} {
+      // Read is allowed so personal impact can use the same configured factors.
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Legacy/admin-only collections. V1 does not require normal clients to write CO2 records.
+    match /co2Records/{recordId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /adminAnalytics/{analyticsId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

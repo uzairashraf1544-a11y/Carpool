@@ -1,0 +1,39 @@
+================================================================================
+TRAVELBUDDY — CERTIFICATE FINGERPRINTS (RELEASE UPLOAD KEY)
+================================================================================
+
+These fingerprints must be added to your Firebase Project Settings for:
+- Google Sign-In authentication in production
+- Phone / OTP authentication in production
+- Google Play App Signing verification
+
+--------------------------------------------------------------------------------
+1. CERTIFICATE FINGERPRINTS
+--------------------------------------------------------------------------------
+
+SHA-256 Fingerprint:
+AA:82:22:E3:C0:E0:B4:AB:FC:AB:33:AF:E3:5A:CC:78:F8:83:08:C5:D4:10:BF:87:9B:3C:DA:92:FE:C9:75:E2
+
+SHA-1 Fingerprint:
+AC:FF:3B:FB:12:29:DC:C1:91:3B:5D:5F:20:9F:BC:CB:A3:27:5C:9C
+
+--------------------------------------------------------------------------------
+2. HOW TO ADD THIS TO FIREBASE CONSOLE (CRITICAL STEP):
+--------------------------------------------------------------------------------
+1. Go to Firebase Console: https://console.firebase.google.com/
+2. Select your project: gen-lang-client-0717949368
+3. Go to Project Settings (Gear icon in top left) -> General tab.
+4. Scroll down to "Your apps" section and locate your Android app:
+   Package name: com.aistudio.carpool.kjqxcv
+5. Click "Add fingerprint".
+6. Paste the SHA-256 fingerprint:
+   AA:82:22:E3:C0:E0:B4:AB:FC:AB:33:AF:E3:5A:CC:78:F8:83:08:C5:D4:10:BF:87:9B:3C:DA:92:FE:C9:75:E2
+7. (Optional) Click "Add fingerprint" and paste the SHA-1 fingerprint:
+   AC:FF:3B:FB:12:29:DC:C1:91:3B:5D:5F:20:9F:BC:CB:A3:27:5C:9C
+8. Click Save.
+
+NOTE ABOUT PLAY APP SIGNING:
+Once Google Play approves and signs your app with its own Google Play App Signing key,
+Google Play Console will display a second "App signing key certificate" SHA-256.
+Be sure to also copy that SHA-256 from Play Console -> Setup -> App Integrity into
+Firebase Console so Google Sign-In continues to work seamlessly on Play Store builds!

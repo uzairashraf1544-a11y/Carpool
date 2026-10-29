@@ -1,0 +1,44 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp"
+    android:height="150dp"
+    android:viewportWidth="200"
+    android:viewportHeight="150">
+  <!-- Wind Turbine 1 -->
+  <path
+      android:fillColor="#FFFFFF"
+      android:pathData="M165,40 L166,95 L164,95 Z"/>
+  <path
+      android:fillColor="#FFFFFF"
+      android:pathData="M165,40 L175,32 L168,43 Z"/>
+  <path
+      android:fillColor="#FFFFFF"
+      android:pathData="M165,40 L154,34 L164,44 Z"/>
+
+  <!-- Wind Turbine 2 -->
+  <path
+      android:fillColor="#FFFFFF"
+      android:pathData="M185,55 L186,105 L184,105 Z"/>
+  <path
+      android:fillColor="#FFFFFF"
+      android:pathData="M185,55 L193,48 L188,58 Z"/>
+
+  <!-- Industrial Plant Silhouette -->
+  <path
+      android:fillColor="#FFFFFF"
+      android:pathData="M140,80 L140,110 L160,110 L160,85 L150,85 L150,80 Z"/>
+
+  <!-- Trees -->
+  <path
+      android:fillColor="#FFFFFF"
+      android:pathData="M115,90 C110,85 105,90 100,95 C98,90 90,92 88,98 C85,95 78,98 78,105 L120,105 Z"/>
+
+  <!-- Winding Road -->
+  <path
+      android:fillColor="#FFFFFF"
+      android:pathData="M30,150 C80,130 110,110 180,100 L185,108 C115,118 85,138 35,150 Z"/>
+
+  <!-- Van Silhouette -->
+  <path
+      android:fillColor="#FFFFFF"
+      android:pathData="M95,115 L108,110 C112,110 116,112 118,116 L122,122 L92,130 L90,123 Z"/>
+</vector>

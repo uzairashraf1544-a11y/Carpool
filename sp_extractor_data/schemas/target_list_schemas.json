@@ -1,0 +1,1603 @@
+{
+  "IR01OnJob": [
+    {
+      "InternalName": "Title",
+      "Title": "Title",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "SCIncidentCategory",
+      "Title": "Incident Category",
+      "TypeAsString": "Lookup"
+    },
+    {
+      "InternalName": "SCIncidentSubcategory",
+      "Title": "Incident Subcategory",
+      "TypeAsString": "Lookup"
+    },
+    {
+      "InternalName": "SCPlantUnit",
+      "Title": "Plant Unit",
+      "TypeAsString": "Lookup"
+    },
+    {
+      "InternalName": "SCAreaSection",
+      "Title": "Area Section",
+      "TypeAsString": "Lookup"
+    },
+    {
+      "InternalName": "DateOfIncident",
+      "Title": "DateOfIncident",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "TimeOfIncident",
+      "Title": "TimeOfIncident",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "IncidentDescription",
+      "Title": "IncidentDescription",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "ActionTaken",
+      "Title": "ActionTaken",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "Status",
+      "Title": "Status",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "Assignee",
+      "Title": "Assignee",
+      "TypeAsString": "UserMulti"
+    },
+    {
+      "InternalName": "IsSavedAsDraft",
+      "Title": "IsSavedAsDraft",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "MedicalOfficer",
+      "Title": "MedicalOfficer",
+      "TypeAsString": "User"
+    },
+    {
+      "InternalName": "MedicalOfficerRemarks",
+      "Title": "MedicalOfficerRemarks",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "MedicalOfficerSubmissionDate",
+      "Title": "MedicalOfficerSubmissionDate",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "Initiator",
+      "Title": "Initiator",
+      "TypeAsString": "User"
+    },
+    {
+      "InternalName": "InitiatedDate",
+      "Title": "InitiatedDate",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "IsClosed",
+      "Title": "IsClosed",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "IRFormID",
+      "Title": "IRFormID",
+      "TypeAsString": "Number"
+    },
+    {
+      "InternalName": "MOFormID",
+      "Title": "MOFormID",
+      "TypeAsString": "Number"
+    },
+    {
+      "InternalName": "SCEmployeeType",
+      "Title": "Employee Type",
+      "TypeAsString": "Choice"
+    },
+    {
+      "InternalName": "SCIncidentScore",
+      "Title": "Incident Score",
+      "TypeAsString": "Number"
+    },
+    {
+      "InternalName": "IsRejected",
+      "Title": "IsRejected",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "IsRepeatedIncident",
+      "Title": "IsRepeatedIncident",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "SCIREmailBody",
+      "Title": "Email Body",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "StandInRP",
+      "Title": "StandInRP",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "StandInAP",
+      "Title": "StandInAP",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "IsDelegated",
+      "Title": "IsDelegated",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "temp",
+      "Title": "temp",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ContractorName",
+      "Title": "ContractorName",
+      "TypeAsString": "Lookup"
+    },
+    {
+      "InternalName": "MSAID",
+      "Title": "MSAID",
+      "TypeAsString": "Number"
+    },
+    {
+      "InternalName": "FormType",
+      "Title": "FormType",
+      "TypeAsString": "Choice"
+    },
+    {
+      "InternalName": "ContentType",
+      "Title": "Content Type",
+      "TypeAsString": "Computed"
+    },
+    {
+      "InternalName": "Attachments",
+      "Title": "Attachments",
+      "TypeAsString": "Attachments"
+    }
+  ],
+  "IRRecommendation": [
+    {
+      "InternalName": "Title",
+      "Title": "Title",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "RecommendationNo",
+      "Title": "RecommendationNo",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ResponsiblePerson",
+      "Title": "ResponsiblePerson",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "TargetDate",
+      "Title": "TargetDate",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "Status",
+      "Title": "Status",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "RecommendationDescription",
+      "Title": "RecommendationDescription",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "Assignee",
+      "Title": "Assignee",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "AssigneeEmail",
+      "Title": "AssigneeEmail",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "LastStatement",
+      "Title": "LastStatement",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "ClosureJustification",
+      "Title": "ClosureJustification",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "ClosureDate",
+      "Title": "ClosureDate",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "ApprovedBy",
+      "Title": "ApprovingAuthority",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "WaivedTargetDate1",
+      "Title": "WaivedTargetDate1",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "WaivedTargetDate2",
+      "Title": "WaivedTargetDate2",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "WaiverComments1",
+      "Title": "WaiverComments1",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "WaiverComments2",
+      "Title": "WaiverComments2",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "IsSavedAsDraft",
+      "Title": "IsSavedAsDraft",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "IRID",
+      "Title": "IRID",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "SCIRModule",
+      "Title": "Module",
+      "TypeAsString": "Choice"
+    },
+    {
+      "InternalName": "ConcurrenceOfRP",
+      "Title": "ConcurrenceOfRP",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "ResponsibleDepartment",
+      "Title": "ResponsibleDepartment",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ResponsibleSection",
+      "Title": "ResponsibleSection",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "IncidentDescription",
+      "Title": "IncidentDescription",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "DateOfIncident",
+      "Title": "DateOfIncident",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "SCPlantUnit",
+      "Title": "Plant Unit",
+      "TypeAsString": "Lookup"
+    },
+    {
+      "InternalName": "SCAreaSection",
+      "Title": "Area Section",
+      "TypeAsString": "Lookup"
+    },
+    {
+      "InternalName": "SCIncidentCategory",
+      "Title": "Incident Category",
+      "TypeAsString": "Lookup"
+    },
+    {
+      "InternalName": "RCAMembers",
+      "Title": "RCAMembers",
+      "TypeAsString": "UserMulti"
+    },
+    {
+      "InternalName": "SCIRDepartment",
+      "Title": "IR Department",
+      "TypeAsString": "Lookup"
+    },
+    {
+      "InternalName": "SCIRSection",
+      "Title": "IR Section",
+      "TypeAsString": "Lookup"
+    },
+    {
+      "InternalName": "StandInRP",
+      "Title": "StandInRP",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "StandInAP",
+      "Title": "StandInAP",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "IsDelegated",
+      "Title": "IsDelegated",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "ExtensionJustification",
+      "Title": "ExtensionJustification",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "FormType",
+      "Title": "FormType",
+      "TypeAsString": "Choice"
+    },
+    {
+      "InternalName": "ResponsiblePersonName",
+      "Title": "ResponsiblePersonName",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "Redo",
+      "Title": "Redo",
+      "TypeAsString": "Choice"
+    },
+    {
+      "InternalName": "IsSentForEvaluation",
+      "Title": "IsSentForEvaluation",
+      "TypeAsString": "Choice"
+    },
+    {
+      "InternalName": "IsEvaluated",
+      "Title": "IsEvaluated",
+      "TypeAsString": "Choice"
+    },
+    {
+      "InternalName": "WiaverJustificationHistory",
+      "Title": "WiaverJustificationHistory",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "ContentType",
+      "Title": "Content Type",
+      "TypeAsString": "Computed"
+    },
+    {
+      "InternalName": "Attachments",
+      "Title": "Attachments",
+      "TypeAsString": "Attachments"
+    }
+  ],
+  "RIR01": [
+    {
+      "InternalName": "Title",
+      "Title": "Title",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "DateOfIncident",
+      "Title": "DateOfIncident",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "TimeOfIncident",
+      "Title": "TimeOfIncident",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "IncidentDescription",
+      "Title": "IncidentDescription",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "ActionTaken",
+      "Title": "ActionTaken",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "Status",
+      "Title": "Status",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "Assignee",
+      "Title": "Assignee",
+      "TypeAsString": "UserMulti"
+    },
+    {
+      "InternalName": "IsSavedAsDraft",
+      "Title": "IsSavedAsDraft",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "Initiator",
+      "Title": "Initiator",
+      "TypeAsString": "User"
+    },
+    {
+      "InternalName": "InitiatedDate",
+      "Title": "InitiatedDate",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "IsClosed",
+      "Title": "IsClosed",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "IRFormID",
+      "Title": "IRFormID",
+      "TypeAsString": "Number"
+    },
+    {
+      "InternalName": "IsRejected",
+      "Title": "IsRejected",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "IsRepeatedIncident",
+      "Title": "IsRepeatedIncident",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "SCIREmailBody",
+      "Title": "Email Body",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "StandInRP",
+      "Title": "StandInRP",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "StandInAP",
+      "Title": "StandInAP",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "IsDelegated",
+      "Title": "IsDelegated",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "temp",
+      "Title": "temp",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "IncidentCategory",
+      "Title": "IncidentCategory",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "IncidentSubcategory",
+      "Title": "IncidentSubcategory",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "PlantUnit",
+      "Title": "PlantUnit",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "AssetNumber",
+      "Title": "AssetNumber",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "OwningDepartment",
+      "Title": "OwningDepartment",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "Criticality",
+      "Title": "Criticality",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "IsRecommendationClosed",
+      "Title": "IsRecommendationClosed",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "SeverityLevel",
+      "Title": "SeverityLevel",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "PreviousRecommendationCB",
+      "Title": "PreviousRecommendationCB",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "IncidentTitle",
+      "Title": "IncidentTitle",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "PastAction",
+      "Title": "PastAction",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ProductionLossCB",
+      "Title": "ProductionLossCB",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "ProductionLoss",
+      "Title": "ProductionLoss",
+      "TypeAsString": "Number"
+    },
+    {
+      "InternalName": "RIR_Number",
+      "Title": "RIR_Number",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "AssetDescription",
+      "Title": "AssetDescription",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "RejectionComment",
+      "Title": "RejectionComment",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "MaintanceLoss",
+      "Title": "MaintanceLoss",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "IncidentOccurance",
+      "Title": "IncidentOccurance",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "InitiatorSection",
+      "Title": "InitiatorSection",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "FailureType",
+      "Title": "FailureType",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "InvestigationType",
+      "Title": "InvestigationType",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ResponsibleSectionId",
+      "Title": "ResponsibleSectionId",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "category1",
+      "Title": "category1",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "category2",
+      "Title": "category2",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "category3",
+      "Title": "category3",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "category4",
+      "Title": "category4",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "category5",
+      "Title": "category5",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "category6",
+      "Title": "category6",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ContentType",
+      "Title": "Content Type",
+      "TypeAsString": "Computed"
+    },
+    {
+      "InternalName": "Attachments",
+      "Title": "Attachments",
+      "TypeAsString": "Attachments"
+    }
+  ],
+  "RIRRecommendations": [
+    {
+      "InternalName": "Title",
+      "Title": "Title",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "RecommendationNo",
+      "Title": "RecommendationNo",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ResponsiblePerson",
+      "Title": "ResponsiblePerson",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "TargetDate",
+      "Title": "TargetDate",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "Status",
+      "Title": "Status",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "RecommendationDescription",
+      "Title": "RecommendationDescription",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "Assignee",
+      "Title": "Assignee",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "AssigneeEmail",
+      "Title": "AssigneeEmail",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "LastStatement",
+      "Title": "LastStatement",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "ClosureJustification",
+      "Title": "ClosureJustification",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "ClosureDate",
+      "Title": "ClosureDate",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "ApprovedBy",
+      "Title": "ApprovingAuthority",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "WaivedTargetDate1",
+      "Title": "WaivedTargetDate1",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "WaivedTargetDate2",
+      "Title": "WaivedTargetDate2",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "WaiverComments1",
+      "Title": "WaiverComments1",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "WaiverComments2",
+      "Title": "WaiverComments2",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "IsSavedAsDraft",
+      "Title": "IsSavedAsDraft",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "IRID",
+      "Title": "IRID",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "SCIRModule",
+      "Title": "Module",
+      "TypeAsString": "Choice"
+    },
+    {
+      "InternalName": "ConcurrenceOfRP",
+      "Title": "ConcurrenceOfRP",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "ResponsibleDepartment",
+      "Title": "ResponsibleDepartment",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ResponsibleSection",
+      "Title": "ResponsibleSection",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "IncidentDescription",
+      "Title": "IncidentDescription",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "DateOfIncident",
+      "Title": "DateOfIncident",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "SCPlantUnit",
+      "Title": "Plant Unit",
+      "TypeAsString": "Lookup"
+    },
+    {
+      "InternalName": "SCAreaSection",
+      "Title": "Area Section",
+      "TypeAsString": "Lookup"
+    },
+    {
+      "InternalName": "SCIncidentCategory",
+      "Title": "Incident Category",
+      "TypeAsString": "Lookup"
+    },
+    {
+      "InternalName": "RCAMembers",
+      "Title": "RCAMembers",
+      "TypeAsString": "UserMulti"
+    },
+    {
+      "InternalName": "SCIRDepartment",
+      "Title": "IR Department",
+      "TypeAsString": "Lookup"
+    },
+    {
+      "InternalName": "SCIRSection",
+      "Title": "IR Section",
+      "TypeAsString": "Lookup"
+    },
+    {
+      "InternalName": "StandInRP",
+      "Title": "StandInRP",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "StandInAP",
+      "Title": "StandInAP",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "IsDelegated",
+      "Title": "IsDelegated",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "ExtensionJustification",
+      "Title": "ExtensionJustification",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "FormType",
+      "Title": "FormType",
+      "TypeAsString": "Choice"
+    },
+    {
+      "InternalName": "ResponsiblePersonName",
+      "Title": "ResponsiblePersonName",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "Redo",
+      "Title": "Redo",
+      "TypeAsString": "Choice"
+    },
+    {
+      "InternalName": "IsSentForEvaluation",
+      "Title": "IsSentForEvaluation",
+      "TypeAsString": "Choice"
+    },
+    {
+      "InternalName": "IsEvaluated",
+      "Title": "IsEvaluated",
+      "TypeAsString": "Choice"
+    },
+    {
+      "InternalName": "RIRNumber",
+      "Title": "RIRNumber",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "DelayReason",
+      "Title": "DelayReason",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "ReviewerComments",
+      "Title": "ReviewerComments",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "AssetNumber",
+      "Title": "AssetNumber",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "RIRAssetNumber",
+      "Title": "RIRAssetNumber",
+      "TypeAsString": "Lookup"
+    },
+    {
+      "InternalName": "ContentType",
+      "Title": "Content Type",
+      "TypeAsString": "Computed"
+    },
+    {
+      "InternalName": "Attachments",
+      "Title": "Attachments",
+      "TypeAsString": "Attachments"
+    }
+  ],
+  "MSA": [
+    {
+      "InternalName": "Title",
+      "Title": "Title",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "MSADate",
+      "Title": "MSADate",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "AccompaniedBy",
+      "Title": "AccompaniedBy",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "AuditedBy",
+      "Title": "AuditedBy",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "Designation",
+      "Title": "Designation",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "AreaAudited",
+      "Title": "AreaAudited",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "StartTime",
+      "Title": "StartTime",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "EndTime",
+      "Title": "EndTime",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "NoOfUnsafeActs",
+      "Title": "NoOfUnsafeActs",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "NoOfUnsafeConditions",
+      "Title": "NoOfUnsafeConditions",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "NoOfSeriousInjury",
+      "Title": "NoOfSeriousInjury",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "NoOfFatalityInjury",
+      "Title": "NoOfFatalityInjury",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "PositivePoints",
+      "Title": "PositivePoints",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "AreaOfImprovement",
+      "Title": "AreaOfImprovement",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "NoOfSafetyContacts",
+      "Title": "NoOfSafetyContacts",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "MSAQualityScore",
+      "Title": "MSAQualityScore",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ScheduleId",
+      "Title": "ScheduleId",
+      "TypeAsString": "Number"
+    },
+    {
+      "InternalName": "IsSavedAsDraft",
+      "Title": "IsSavedAsDraft",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "AuditedByName",
+      "Title": "AuditedByName",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "AuditMinutes",
+      "Title": "AuditMinutes",
+      "TypeAsString": "Number"
+    },
+    {
+      "InternalName": "NoOfRecommendations",
+      "Title": "NoOfRecommendations",
+      "TypeAsString": "Number"
+    },
+    {
+      "InternalName": "DepartmentName",
+      "Title": "DepartmentName",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "NMIID",
+      "Title": "NMIID",
+      "TypeAsString": "Number"
+    },
+    {
+      "InternalName": "NMIDescription",
+      "Title": "NMIDescription",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "AreaAuditedActual",
+      "Title": "AreaAuditedActual",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "IsExtInProgress",
+      "Title": "IsExtInProgress",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "ContentType",
+      "Title": "Content Type",
+      "TypeAsString": "Computed"
+    },
+    {
+      "InternalName": "Attachments",
+      "Title": "Attachments",
+      "TypeAsString": "Attachments"
+    }
+  ],
+  "MSARecommendation": [
+    {
+      "InternalName": "Title",
+      "Title": "Title",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "MSAID",
+      "Title": "MSAID",
+      "TypeAsString": "Number"
+    },
+    {
+      "InternalName": "RecommendationNo",
+      "Title": "RecommendationNo",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ResponsiblePerson",
+      "Title": "ResponsiblePerson",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ResponsibleDepartment",
+      "Title": "ResponsibleDepartment",
+      "TypeAsString": "Number"
+    },
+    {
+      "InternalName": "ResponsibleSection",
+      "Title": "ResponsibleSection",
+      "TypeAsString": "Number"
+    },
+    {
+      "InternalName": "TypeOfVoilation",
+      "Title": "TypeOfVoilation",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "InjuryClass",
+      "Title": "InjuryClass",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ObservationCategory",
+      "Title": "ObservationCategory",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ObservationSubcategory",
+      "Title": "ObservationSubcategory",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ConsentTaken",
+      "Title": "ConsentTaken",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "TargetDate",
+      "Title": "TargetDate",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "Status",
+      "Title": "Status",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ObservationSpot",
+      "Title": "ObservationSpot",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "MSARecommendationDescription",
+      "Title": "Description",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "Assignee",
+      "Title": "Assignee",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "IsSavedAsDraft",
+      "Title": "IsSavedAsDraft",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "AssigneeEmail",
+      "Title": "AssigneeEmail",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "LastStatement",
+      "Title": "LastStatement",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "ClosureJustification",
+      "Title": "ClosureJustification",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "ClosureDate",
+      "Title": "ClosureDate",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "ApprovedBy",
+      "Title": "ApprovedBy",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "StandInRP",
+      "Title": "StandInRP",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "StandInAP",
+      "Title": "StandInAP",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "IsDelegated",
+      "Title": "IsDelegated",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "ResponsiblePersonName",
+      "Title": "ResponsiblePersonName",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ResponsibleDepartmentName",
+      "Title": "ResponsibleDepartmentName ",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ResponsibleSectionName",
+      "Title": "ResponsibleSectionName",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "MSAAreaAudited",
+      "Title": "MSAAreaAudited",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "MSAAuditedBy",
+      "Title": "MSAAuditedBy",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "MSADate",
+      "Title": "MSADate",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "RejectedComments",
+      "Title": "RejectedComments",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "IsRejected",
+      "Title": "IsRejected",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "SendBackJustification",
+      "Title": "SendBackJustification",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "ActualResponsiblePerson",
+      "Title": "ActualResponsiblePerson",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ModificationComments",
+      "Title": "ModificationComments",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "ModificationDetails",
+      "Title": "ModificationDetails",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "WaivedTargetDate2",
+      "Title": "WaivedTargetDate2",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "WaivedTargetDate1",
+      "Title": "WaivedTargetDate1",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "RecommendationDescription",
+      "Title": "RecommendationDescription",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "NMIDescription",
+      "Title": "NMIDescription",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "NMIID",
+      "Title": "NMIID",
+      "TypeAsString": "Number"
+    },
+    {
+      "InternalName": "ContractorName",
+      "Title": "ContractorName",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ContentType",
+      "Title": "Content Type",
+      "TypeAsString": "Computed"
+    },
+    {
+      "InternalName": "Attachments",
+      "Title": "Attachments",
+      "TypeAsString": "Attachments"
+    }
+  ],
+  "ESHE-MOM": [
+    {
+      "InternalName": "Title",
+      "Title": "Title",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "Venue",
+      "Title": "Venue",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "InChair",
+      "Title": "InChair",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "MeetingParticipants",
+      "Title": "MeetingParticipants",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "MeetingAgenda",
+      "Title": "MeetingAgenda",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "PreparedBy",
+      "Title": "PreparedBy",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ReviewedBy",
+      "Title": "ReviewedBy",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ApprovedBy",
+      "Title": "ApprovedBy",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "IsSaveAsDraft",
+      "Title": "IsSavedAsDraft",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "Status",
+      "Title": "Status",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "EHSEComments",
+      "Title": "UMEHSEComments",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "DOComments",
+      "Title": "DOComments",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "DO",
+      "Title": "DO",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "UMHSE",
+      "Title": "UMHSE",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "Assignee",
+      "Title": "Assignee",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "SubmissionDate",
+      "Title": "SubmissionDate",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "EmailMessage",
+      "Title": "EmailMessage",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "MeetingDate",
+      "Title": "MeetingDate",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "MeetingTime",
+      "Title": "MeetingTime",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "EmailUsers",
+      "Title": "EmailUsers",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "MeetingNo",
+      "Title": "MeetingNo",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "StandInRP",
+      "Title": "StandInRP",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "StandInAP",
+      "Title": "StandInAP",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "IsDelegated",
+      "Title": "IsDelegated",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "MeetingType",
+      "Title": "MeetingType",
+      "TypeAsString": "Lookup"
+    },
+    {
+      "InternalName": "Department",
+      "Title": "Department",
+      "TypeAsString": "Lookup"
+    },
+    {
+      "InternalName": "Unit",
+      "Title": "Unit",
+      "TypeAsString": "Lookup"
+    },
+    {
+      "InternalName": "ContentType",
+      "Title": "Content Type",
+      "TypeAsString": "Computed"
+    },
+    {
+      "InternalName": "Attachments",
+      "Title": "Attachments",
+      "TypeAsString": "Attachments"
+    }
+  ],
+  "ESHE-MOMRecommendation": [
+    {
+      "InternalName": "Title",
+      "Title": "Title",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "RecommendationNo",
+      "Title": "RecommendationNo",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ResponsiblePerson",
+      "Title": "ResponsiblePerson",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ResponsibleDepartment",
+      "Title": "ResponsibleDepartment",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "TargetDate",
+      "Title": "TargetDate",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "Status",
+      "Title": "Status",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "RecommendationDescription",
+      "Title": "RecommendationDescription",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "Assignee",
+      "Title": "Assignee",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "IsSavedAsDraft",
+      "Title": "IsSavedAsDraft",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "AssigneeEmail",
+      "Title": "AssigneeEmail",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "LastStat",
+      "Title": "LastStatement",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "ClosureJustification",
+      "Title": "ClosureJustification",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "ClosureDate",
+      "Title": "ClosureDate",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "ApprovedBy",
+      "Title": "ApprovedBy",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "WaivedTargetDate1",
+      "Title": "WaivedTargetDate1",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "WaivedTargetDate2",
+      "Title": "WaivedTargetDate2",
+      "TypeAsString": "DateTime"
+    },
+    {
+      "InternalName": "EHSEID",
+      "Title": "EHSEID",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "EHSECategory",
+      "Title": "EHSECategory",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "IsSpecialCase",
+      "Title": "IsSpecialCase",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "WaiverComments1",
+      "Title": "WaiverComments1",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "WaiverComments2",
+      "Title": "WaiverComments2",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "StandInRP",
+      "Title": "StandInRP",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "StandInAP",
+      "Title": "StandInAP",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "IsDelegated",
+      "Title": "IsDelegated",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "RiskLevel",
+      "Title": "RiskLevel",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "MeetingNo",
+      "Title": "MeetingNo",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "ReviewedBy",
+      "Title": "ReviewedBy",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "SBCounter",
+      "Title": "SBCounter",
+      "TypeAsString": "Number"
+    },
+    {
+      "InternalName": "RejectedComments",
+      "Title": "RejectedComments",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "SendBackJustification",
+      "Title": "SendBackJustification",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "ModificationComments",
+      "Title": "ModificationComments",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "ModificationDetails",
+      "Title": "ModificationDetails",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "IsRejected",
+      "Title": "IsRejected",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "ExtensionJustification",
+      "Title": "ExtensionJustification",
+      "TypeAsString": "Note"
+    },
+    {
+      "InternalName": "SendByDM",
+      "Title": "SendByDM",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "IsReviewed",
+      "Title": "IsReviewed",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "Risk_Category",
+      "Title": "Risk_Category",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "Parent_Risk",
+      "Title": "Parent_Risk",
+      "TypeAsString": "Text"
+    },
+    {
+      "InternalName": "SentForDrop",
+      "Title": "SentForDrop",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "IsHSEReview",
+      "Title": "IsHSEReview",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "IsSubsequentAction",
+      "Title": "IsSubsequentAction",
+      "TypeAsString": "Boolean"
+    },
+    {
+      "InternalName": "ParentRecommendationId",
+      "Title": "ParentRecommendationId",
+      "TypeAsString": "Number"
+    },
+    {
+      "InternalName": "ContentType",
+      "Title": "Content Type",
+      "TypeAsString": "Computed"
+    },
+    {
+      "InternalName": "Attachments",
+      "Title": "Attachments",
+      "TypeAsString": "Attachments"
+    }
+  ]
+}
