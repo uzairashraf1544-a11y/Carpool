@@ -1,5 +1,6 @@
 package com.example.data.repository
 
+import android.util.Log
 import com.example.data.model.AuditLog
 import com.example.data.model.LeaderboardEntry
 import com.example.data.model.Ride
@@ -192,16 +193,16 @@ class AdminRepository(
         val listener = db.collection("users")
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
+                    Log.w("AdminRepository", "getAllUsersFlow listener error: ${error.message}", error)
                     trySend(emptyList())
                     return@addSnapshotListener
                 }
                 val users = snapshot?.documents?.mapNotNull { doc ->
-                    doc.toObject(User::class.java)?.let { raw ->
-                        raw.copy(
-                            role = raw.effectiveRole,
-                            accountStatus = raw.effectiveAccountStatus,
-                            currentMode = raw.effectiveMode
-                        )
+                    try {
+                        User.fromSnapshot(doc)
+                    } catch (e: Exception) {
+                        Log.w("AdminRepository", "Failed to parse user document ${doc.id}", e)
+                        null
                     }
                 }.orEmpty()
                 trySend(users)
@@ -257,7 +258,7 @@ class AdminRepository(
 
             if (adminUser != null) {
                 val targetDoc = db.collection("users").document(targetUid).get().await()
-                val targetUser = targetDoc.toObject(User::class.java)
+                val targetUser = User.fromSnapshot(targetDoc)
                 val auditId = "${System.currentTimeMillis()}_${targetUid}"
                 val log = AuditLog(
                     auditId = auditId,
@@ -380,19 +381,18 @@ class AdminRepository(
 
     fun getPendingApprovalsFlow(): Flow<List<User>> = callbackFlow {
         val listener = db.collection("users")
-            .whereEqualTo("accountStatus", User.STATUS_PENDING_APPROVAL)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
+                    Log.w("AdminRepository", "getPendingApprovalsFlow listener error: ${error.message}", error)
                     trySend(emptyList())
                     return@addSnapshotListener
                 }
                 val pending = snapshot?.documents?.mapNotNull { doc ->
-                    doc.toObject(User::class.java)?.let { raw ->
-                        raw.copy(
-                            role = raw.effectiveRole,
-                            accountStatus = raw.effectiveAccountStatus,
-                            currentMode = raw.effectiveMode
-                        )
+                    try {
+                        User.fromSnapshot(doc)?.takeIf { it.isPendingApproval() }
+                    } catch (e: Exception) {
+                        Log.w("AdminRepository", "Failed to parse pending user document ${doc.id}", e)
+                        null
                     }
                 }?.sortedByDescending { it.approvalRequestedAt.takeIf { t -> t > 0L } ?: it.createdAt }
                 .orEmpty()

@@ -89,12 +89,12 @@ class AuthRepository(
                         return@addSnapshotListener
                     }
 
-                    val rawUser = snapshot.toObject(User::class.java)
-                    val normalized = rawUser?.copy(
-                        role = rawUser.effectiveRole,
-                        accountStatus = rawUser.effectiveAccountStatus,
-                        currentMode = rawUser.effectiveMode
-                    )
+                    val normalized = try {
+                        User.fromSnapshot(snapshot)
+                    } catch (e: Exception) {
+                        Log.e("AuthDebug", "Failed to deserialize user profile", e)
+                        null
+                    }
 
                     // Automatic restriction enforcement on active sessions
                     if (normalized != null && (normalized.isBlocked() || normalized.isRemoved())) {
@@ -154,13 +154,8 @@ class AuthRepository(
                 db.collection("users").document(firebaseUser.uid).set(recoveredUser).await()
                 recoveredUser
             } else {
-                val rawUser = userDoc.toObject(User::class.java)
+                User.fromSnapshot(userDoc)
                     ?: error("Your TravelBuddy profile could not be read.")
-                rawUser.copy(
-                    role = rawUser.effectiveRole,
-                    accountStatus = rawUser.effectiveAccountStatus,
-                    currentMode = rawUser.effectiveMode
-                )
             }
 
             if (userToReturn.isBlocked() || userToReturn.isRemoved()) {
@@ -276,13 +271,8 @@ class AuthRepository(
 
             val userDoc = db.collection("users").document(uid).get().await()
             if (userDoc.exists()) {
-                val rawUser = userDoc.toObject(User::class.java)
+                val normalized = User.fromSnapshot(userDoc)
                     ?: error("Your TravelBuddy profile could not be read.")
-                val normalized = rawUser.copy(
-                    role = rawUser.effectiveRole,
-                    accountStatus = rawUser.effectiveAccountStatus,
-                    currentMode = rawUser.effectiveMode
-                )
                 if (normalized.isBlocked() || normalized.isRemoved()) {
                     auth.signOut()
                     throw IllegalStateException("Your account is currently restricted. Please contact the administrator.")
@@ -429,12 +419,7 @@ class AuthRepository(
         return runCatching {
             val userDoc = db.collection("users").document(user.uid).get().await()
             if (!userDoc.exists()) error("Profile does not exist.")
-            val raw = userDoc.toObject(User::class.java) ?: error("Failed to read profile.")
-            raw.copy(
-                role = raw.effectiveRole,
-                accountStatus = raw.effectiveAccountStatus,
-                currentMode = raw.effectiveMode
-            )
+            User.fromSnapshot(userDoc) ?: error("Failed to read profile.")
         }
     }
 

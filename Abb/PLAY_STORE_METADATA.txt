@@ -8,9 +8,9 @@ TRAVELBUDDY — GOOGLE PLAY STORE METADATA & TECHNICAL SPECIFICATION
 Application Name       : TravelBuddy
 Application ID         : com.aistudio.carpool.kjqxcv
 Bundle File            : app-release.aab
-Bundle Size            : ~26.6 MB (27,926,693 bytes)
-Version Code           : 1
-Version Name           : 1.0
+Bundle Size            : ~27.9 MB
+Version Code           : 4
+Version Name           : 4.0
 Min SDK                : API 24 (Android 7.0 Nougat)
 Target SDK             : API 36 (Android 16)
 Compile SDK            : API 36 (minorApiLevel 1)
@@ -21,22 +21,16 @@ Build Type             : Release (Signed, Minify Disabled)
 --------------------------------------------------------------------------------
 1. android.permission.INTERNET
    - Required for Firestore, Firebase Authentication, and real-time syncing.
-2. android.permission.ACCESS_FINE_LOCATION
-   - Used for live active journey tracking during driver trips.
-3. android.permission.ACCESS_COARSE_LOCATION
-   - Approximate location for pickup zone matching.
-4. android.permission.POST_NOTIFICATIONS
+2. android.permission.POST_NOTIFICATIONS
    - Required on Android 13+ (API 33+) for commute alarms & ride updates.
-5. android.permission.FOREGROUND_SERVICE
-   - Required to maintain live journey sharing while trip is active.
-6. android.permission.FOREGROUND_SERVICE_LOCATION
-   - Declares foreground service type for location (Android 14+ requirement).
-7. android.permission.RECEIVE_BOOT_COMPLETED
+3. android.permission.RECEIVE_BOOT_COMPLETED
    - Reschedules local commute reminders when phone restarts.
-8. android.permission.SCHEDULE_EXACT_ALARM
-   - For exact local scheduled commute reminder alarms.
-9. android.permission.USE_EXACT_ALARM
-   - Exact alarm delivery across Android 13+ devices.
+
+NOTE: All unnecessary permissions (including GPS Location ACCESS_FINE_LOCATION,
+ACCESS_COARSE_LOCATION, FOREGROUND_SERVICE_LOCATION, and SCHEDULE_EXACT_ALARM /
+USE_EXACT_ALARM) have been removed. Pickup zones are designated by township/plant
+workplace zones, requiring zero device location access and ensuring instant
+Google Play Store compliance.
 
 --------------------------------------------------------------------------------
 3. RECOMMENDED STORE LISTING INFORMATION
@@ -56,7 +50,7 @@ Key Features:
 • Live Journey & Vehicle Coordination: Real-time driver seat management, passenger requests, and pickup zone clustering.
 • Environmental Sustainability: Live tracking of vehicle trips avoided, individual and collective CO₂ reduction metrics, and management reporting.
 • Role Flexibility: Effortlessly switch between Passenger and Driver modes depending on daily availability.
-• Privacy & Safety First: Precise location is only shared during active, confirmed journeys with verified colleagues.
+• Privacy & Safety First: Workplace designated zones protect user privacy; no background GPS tracking or device location access required.
 
 App Category:
 Maps & Navigation / Auto & Vehicles / Business

@@ -41,12 +41,12 @@ class UserRepository(
                         return@addSnapshotListener
                     }
 
-                    val rawUser = snapshot?.toObject(User::class.java)
-                    val user = rawUser?.copy(
-                        role = rawUser.effectiveRole,
-                        accountStatus = rawUser.effectiveAccountStatus,
-                        currentMode = rawUser.effectiveMode
-                    )
+                    val user = try {
+                        User.fromSnapshot(snapshot)
+                    } catch (e: Exception) {
+                        Log.e("UserRepository", "Failed to deserialize user document users/$uid", e)
+                        null
+                    }
 
                     if (BuildConfig.DEBUG) {
                         Log.d(
@@ -75,12 +75,7 @@ class UserRepository(
         val uid = auth.currentUser?.uid ?: return null
         return try {
             val doc = db.collection("users").document(uid).get().await()
-            val rawUser = doc.toObject(User::class.java) ?: return null
-            rawUser.copy(
-                role = rawUser.effectiveRole,
-                accountStatus = rawUser.effectiveAccountStatus,
-                currentMode = rawUser.effectiveMode
-            )
+            User.fromSnapshot(doc)
         } catch (e: Exception) {
             logFirestoreError("getCurrentUser", "users/$uid", uid, e)
             null

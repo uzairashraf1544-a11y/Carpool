@@ -41,7 +41,7 @@ installations.
    • App Title, Short Description, and Full Store Listing Description.
    • Target SDK: 36 (Android 16), Min SDK: 24 (Android 7.0).
    • Application ID: com.aistudio.carpool.kjqxcv
-   • Version Code: 1, Version Name: 1.0.
+   • Version Code: 4, Version Name: 4.0.
    • Full list of declared permissions and explanations for Data Safety declarations.
 
 7. HOW_TO_UPLOAD_TO_PLAY_STORE.md
@@ -53,9 +53,12 @@ installations.
    • Required for Firebase Authentication (Google Sign-In and Phone/SMS verification).
 
 --------------------------------------------------------------------------------
-2. RELEASE NOTES FOR THIS VERSION (v1.0 / VersionCode 1)
+2. RELEASE NOTES FOR THIS VERSION (v4.0 / VersionCode 4)
 --------------------------------------------------------------------------------
-Production release of TravelBuddy corporate carpool platform:
+Production release v4.0 of TravelBuddy corporate carpool platform:
+• Universal Firestore Deserialization: Added type-tolerant User parser supporting both Firebase Console Timestamps and primitive Longs/Strings, resolving Member List visibility across all members.
+• Google Sign-In & Authentication Hardening: Added fallback Web Client ID, updated google-services.json with release certificate hashes, and made profile reading resilient during Google login.
+• App Version Update: Bumped to Version 4 (versionCode = 4, versionName = "4.0").
 • Privacy & Permission Hardening: Removed all unnecessary runtime and manifest permissions:
   - Removed GPS Location permissions (ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION).
   - Removed Foreground Service Location (FOREGROUND_SERVICE_LOCATION, FOREGROUND_SERVICE).

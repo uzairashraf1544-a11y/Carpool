@@ -8,9 +8,9 @@ TRAVELBUDDY — GOOGLE PLAY STORE METADATA & TECHNICAL SPECIFICATION
 Application Name       : TravelBuddy
 Application ID         : com.aistudio.carpool.kjqxcv
 Bundle File            : app-release.aab
-Bundle Size            : ~26.6 MB (27,926,693 bytes)
-Version Code           : 1
-Version Name           : 1.0
+Bundle Size            : ~27.9 MB
+Version Code           : 4
+Version Name           : 4.0
 Min SDK                : API 24 (Android 7.0 Nougat)
 Target SDK             : API 36 (Android 16)
 Compile SDK            : API 36 (minorApiLevel 1)

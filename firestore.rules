@@ -30,7 +30,10 @@ service cloud.firestore {
 
     function isAdmin() {
       return currentUserExists()
-        && currentUser().data.get('role', 'USER') == 'ADMIN';
+        && (
+          currentUser().data.get('role', 'USER') in ['ADMIN', 'admin', 'Admin']
+          || currentUser().data.get('isAdmin', false) == true
+        );
     }
 
     function validRole(role) {

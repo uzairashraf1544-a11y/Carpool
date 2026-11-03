@@ -61,14 +61,12 @@ fun LoginScreen(
 
     fun launchGoogleSignIn() {
         val resId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
-        if (resId == 0) {
-            errorMessage = "Google sign-in is not configured yet. Please use email sign-in for now."
-            return
-        }
-        val webClientId = context.getString(resId)
-        if (webClientId.isBlank()) {
-            errorMessage = "Google sign-in is not configured yet. Please use email sign-in for now."
-            return
+        val webClientId = if (resId != 0) {
+            context.getString(resId)
+        } else {
+            ""
+        }.ifBlank {
+            "462593078430-egd4i0jhcbpqdssrtggmfnp4v1nmo1kr.apps.googleusercontent.com"
         }
 
         val googleIdOption = GetGoogleIdOption.Builder()
