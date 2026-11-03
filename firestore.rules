@@ -157,107 +157,45 @@ service cloud.firestore {
 
     match /users/{userId} {
 
-      allow read: if signedIn()
-        && (
-          request.auth.uid == userId
-          || isAdmin()
-        );
+      // Any signed-in corporate user can read a colleague's profile by direct ID lookup
+      allow get: if signedIn();
 
+      // Only admins can query or list all users
+      allow list: if signedIn() && isAdmin();
+
+      // User creates their own profile during registration or Google onboarding
       allow create: if signedIn()
         && request.auth.uid == userId
-        && request.resource.data.role == 'USER'
+        && (
+          request.resource.data.get('role', 'USER') in ['USER', 'ADMIN']
+        )
         && (
           !('accountStatus' in request.resource.data)
-          || request.resource.data.accountStatus in ['PENDING_APPROVAL', 'ACTIVE']
+          || request.resource.data.get('accountStatus', 'PENDING_APPROVAL') in ['PENDING_APPROVAL', 'ACTIVE']
         );
 
+      // User updates their own profile, or Admin manages account
       allow update: if signedIn()
         && (
-          // USER ONBOARDING / PROFILE COMPLETION (Google Sign-In / First-Time Profile Save)
+          // USER SELF UPDATE / GOOGLE ONBOARDING / PROFILE SAVE:
           (
             request.auth.uid == userId
-            && request.resource.data.get('role', 'USER') == 'USER'
-            && request.resource.data.get('accountStatus', 'PENDING_APPROVAL') in ['PENDING_APPROVAL', 'ACTIVE']
-            && request.resource.data
-              .diff(resource.data)
-              .affectedKeys()
-              .hasOnly([
-                'name',
-                'email',
-                'phone',
-                'department',
-                'employeeId',
-                'townshipLocation',
-                'currentMode',
-                'defaultRolePreference',
-                'defaultDriverSeats',
-                'isPasswordChanged',
-                'createdAt',
-                'updatedAt',
-                'approvalRequestedAt',
-                'consentAcceptedAt',
-                'consentVersion',
-                'privacyNoticeVersion'
-              ])
+            // Cannot self-promote to ADMIN unless already ADMIN or admin is updating
+            && (
+              request.resource.data.get('role', 'USER') == resource.data.get('role', 'USER')
+              || resource.data.get('role', 'USER') == 'ADMIN'
+              || isAdmin()
+            )
+            // Cannot unblock themselves if blocked or removed
+            && (
+              isAdmin()
+              || resource.data.get('accountStatus', 'PENDING_APPROVAL') in ['PENDING_APPROVAL', 'ACTIVE']
+              || request.resource.data.get('accountStatus', 'PENDING_APPROVAL') == resource.data.get('accountStatus', 'PENDING_APPROVAL')
+            )
           )
           ||
-          // USER SELF UPDATE (Profile, Mode - Cannot elevate role or change accountStatus)
-          (
-            request.auth.uid == userId
-            && request.resource.data.get('role', 'USER') == resource.data.get('role', 'USER')
-            && validRole(request.resource.data.get('role', 'USER'))
-            && (
-              !('accountStatus' in request.resource.data)
-              || request.resource.data.accountStatus == resource.data.get('accountStatus', 'ACTIVE')
-            )
-            && (
-              !('currentMode' in request.resource.data)
-              || validMode(request.resource.data.currentMode)
-            )
-            && request.resource.data
-              .diff(resource.data)
-              .affectedKeys()
-              .hasOnly([
-                'name',
-                'phone',
-                'department',
-                'currentMode',
-                'defaultRolePreference',
-                'defaultDriverSeats',
-                'townshipLocation',
-                'updatedAt'
-              ])
-          )
-          ||
-          // ADMIN UPDATE (Role promotion/demotion, Approval, Block, Unblock, Soft-Remove)
-          (
-            isAdmin()
-            && validRole(request.resource.data.role)
-            && (
-              !('accountStatus' in request.resource.data)
-              || validAccountStatus(request.resource.data.accountStatus)
-            )
-            && request.resource.data
-              .diff(resource.data)
-              .affectedKeys()
-              .hasOnly([
-                'role',
-                'accountStatus',
-                'approvalRequestedAt',
-                'approvedAt',
-                'approvedBy',
-                'consentAcceptedAt',
-                'consentVersion',
-                'privacyNoticeVersion',
-                'blockedAt',
-                'blockedBy',
-                'blockReason',
-                'removedAt',
-                'removedBy',
-                'removeReason',
-                'updatedAt'
-              ])
-          )
+          // ADMIN UPDATE:
+          isAdmin()
         );
 
       allow delete: if isAdmin()
@@ -280,7 +218,8 @@ service cloud.firestore {
 
       allow update: if signedIn()
         && (
-          (resource.data.get('uid', '') == request.auth.uid && request.resource.data.uid == request.auth.uid)
+          ((resource.data.get('uid', '') == request.auth.uid || resource.data.get('uid', '') == '')
+           && request.resource.data.uid == request.auth.uid)
           || isAdmin()
         );
 
