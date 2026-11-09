@@ -108,21 +108,49 @@ class AdminRepository(
     }
 
     suspend fun recalculateAndSyncLeaderboard(): Result<List<LeaderboardEntry>> = runCatching {
-        // 1. Read completed rides
+        // Fast path: Query top users by totalCo2SavedKg descending (takes <= 10 reads)
+        val snapshot = try {
+            db.collection("users")
+                .orderBy("totalCo2SavedKg", com.google.firebase.firestore.Query.Direction.DESCENDING)
+                .limit(10)
+                .get()
+                .await()
+        } catch (_: Exception) { null }
+
+        val topUsers = snapshot?.documents?.mapNotNull { doc ->
+            User.fromSnapshot(doc)
+        }?.filter { it.isActive() && it.totalCo2SavedKg > 0.0 }.orEmpty()
+
+        if (topUsers.isNotEmpty()) {
+            val topEntries = topUsers.take(3).mapIndexed { idx, u ->
+                LeaderboardEntry(
+                    uid = u.uid,
+                    name = u.name.ifBlank { "Contributor" },
+                    department = u.department.ifBlank { "Operations" },
+                    co2SavedKg = u.totalCo2SavedKg,
+                    rideCount = u.totalCompletedRides,
+                    rank = idx + 1
+                )
+            }
+            updateLeaderboard(topEntries)
+            return@runCatching topEntries
+        }
+
+        // Fallback / One-time backfill from completed rides & requests (bounded to 100)
         val ridesSnap = db.collection("rides")
             .whereEqualTo("status", Ride.STATUS_COMPLETED)
+            .limit(100)
             .get()
             .await()
         val completedRides = ridesSnap.documents.mapNotNull { it.toObject(Ride::class.java) }
 
-        // 2. Read completed requests
         val reqsSnap = db.collection("rideRequests")
             .whereEqualTo("status", RideRequest.STATUS_COMPLETED)
+            .limit(100)
             .get()
             .await()
         val completedRequests = reqsSnap.documents.mapNotNull { it.toObject(RideRequest::class.java) }
 
-        // 3. Sustainability config
         val sysConfigDoc = try { db.collection("systemConfig").document("sustainability").get().await() } catch (_: Exception) { null }
         val baselineDistanceKm = sysConfigDoc?.getDouble("baselineDistanceKm") ?: 3.0
         val co2Factor = sysConfigDoc?.getDouble("co2FactorKgPerKm") ?: 0.12
@@ -166,6 +194,18 @@ class AdminRepository(
                 acc.totalCo2SavedKg += (1.0 * baselineDistanceKm * co2Factor)
                 acc.totalRides += 1
             }
+        }
+
+        // Backfill user documents with cumulative metrics for subsequent fast-path hits
+        for ((uid, acc) in userAggregates) {
+            try {
+                db.collection("users").document(uid).update(
+                    mapOf(
+                        "totalCo2SavedKg" to acc.totalCo2SavedKg,
+                        "totalCompletedRides" to acc.totalRides
+                    )
+                ).await()
+            } catch (_: Exception) {}
         }
 
         val topEntries = userAggregates.values
@@ -212,6 +252,7 @@ class AdminRepository(
 
     fun getAllRidesFlow(): Flow<List<Ride>> = callbackFlow {
         val listener = db.collection("rides")
+            .limit(100)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     trySend(emptyList())
@@ -224,6 +265,7 @@ class AdminRepository(
 
     fun getAllRequestsFlow(): Flow<List<RideRequest>> = callbackFlow {
         val listener = db.collection("rideRequests")
+            .limit(100)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     trySend(emptyList())
@@ -238,6 +280,7 @@ class AdminRepository(
 
     fun getAuditLogsFlow(): Flow<List<AuditLog>> = callbackFlow {
         val listener = db.collection("auditLogs")
+            .limit(50)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     trySend(emptyList())

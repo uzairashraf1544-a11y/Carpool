@@ -95,26 +95,12 @@ class UserRepository(
         val ref = db.collection("users").document(uid)
 
         return runCatching {
-            if (BuildConfig.DEBUG) {
-                val before = ref.get().await()
-                Log.d(
-                    "FirestoreDebug",
-                    "MODE_SWITCH_START | project=${FirebaseApp.getInstance().options.projectId} | " +
-                        "uid=$uid | docUid=${before.getString("uid")} | role=${before.getString("role")} | " +
-                        "from=${before.getString("currentMode")} | requested=$mode"
-                )
-            }
+            Log.d("FirestoreDebug", "MODE_SWITCH_START | uid=$uid | requested=$mode")
 
             // Narrow partial write: role/identity/default preference are never touched.
             ref.update("currentMode", mode).await()
 
-            if (BuildConfig.DEBUG) {
-                val after = ref.get().await()
-                Log.d(
-                    "FirestoreDebug",
-                    "MODE_SWITCH_FIRESTORE_SUCCESS | uid=$uid | storedMode=${after.getString("currentMode")}"
-                )
-            }
+            Log.d("FirestoreDebug", "MODE_SWITCH_FIRESTORE_SUCCESS | uid=$uid | mode=$mode")
             Unit
         }.onFailure { error ->
             if (error is FirebaseFirestoreException) {

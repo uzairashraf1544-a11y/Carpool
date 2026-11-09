@@ -45,7 +45,11 @@ data class User(
     val approvedBy: String = "",
     val consentAcceptedAt: Long = 0L,
     val consentVersion: Int = 1,
-    val privacyNoticeVersion: Int = 1
+    val privacyNoticeVersion: Int = 1,
+
+    // CUMULATIVE IMPACT METRICS (CACHED DIRECTLY ON USER FOR ZERO-READ PERSONAL STATS)
+    val totalCo2SavedKg: Double = 0.0,
+    val totalCompletedRides: Int = 0
 ) {
     val effectiveRole: String
         get() = when (role.trim().uppercase()) {
@@ -148,6 +152,18 @@ data class User(
                 return fallback
             }
 
+            fun parseDouble(vararg keys: String, fallback: Double = 0.0): Double {
+                for (key in keys) {
+                    val v = data[key] ?: continue
+                    return when (v) {
+                        is Number -> v.toDouble()
+                        is String -> v.toDoubleOrNull() ?: fallback
+                        else -> fallback
+                    }
+                }
+                return fallback
+            }
+
             fun parseBoolean(vararg keys: String, fallback: Boolean = false): Boolean {
                 for (key in keys) {
                     val v = data[key] ?: continue
@@ -204,6 +220,8 @@ data class User(
             val consentAcceptedAt = parseLong("consentAcceptedAt", fallback = 0L)
             val consentVersion = parseInt("consentVersion", fallback = 1)
             val privacyNoticeVersion = parseInt("privacyNoticeVersion", fallback = 1)
+            val totalCo2SavedKg = parseDouble("totalCo2SavedKg", "co2Saved", "co2SavedKg", fallback = 0.0)
+            val totalCompletedRides = parseInt("totalCompletedRides", "completedRides", fallback = 0)
 
             val raw = User(
                 uid = uid,
@@ -232,7 +250,9 @@ data class User(
                 approvedBy = approvedBy,
                 consentAcceptedAt = consentAcceptedAt,
                 consentVersion = consentVersion,
-                privacyNoticeVersion = privacyNoticeVersion
+                privacyNoticeVersion = privacyNoticeVersion,
+                totalCo2SavedKg = totalCo2SavedKg,
+                totalCompletedRides = totalCompletedRides
             )
 
             return raw.copy(

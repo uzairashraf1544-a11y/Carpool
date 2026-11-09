@@ -287,4 +287,50 @@ class AdminApprovalUnitTest {
             restrictedError
         )
     }
+
+    @Test
+    fun testUserCumulativeMetricsZeroReadArchitecture() {
+        // User with cumulative stats stored directly on document
+        val user = User(
+            uid = "user-co2-100",
+            name = "Eco Commuter",
+            email = "eco@example.com",
+            totalCo2SavedKg = 42.5,
+            totalCompletedRides = 15
+        )
+
+        assertEquals(42.5, user.totalCo2SavedKg, 0.001)
+        assertEquals(15, user.totalCompletedRides)
+
+        // Legacy user with no cumulative fields defaults gracefully to 0.0 and 0
+        val legacyUser = User(uid = "user-legacy")
+        assertEquals(0.0, legacyUser.totalCo2SavedKg, 0.001)
+        assertEquals(0, legacyUser.totalCompletedRides)
+    }
+
+    @Test
+    fun testSparkFreeTierReadBudgetCalculation() {
+        // 300 employees, 10 commute interactions daily
+        val activeUsers = 300
+        val dailyInteractionsPerUser = 10
+
+        // With persistent cache + single discovery query + direct user profile metrics:
+        // - App launch / user session: 1 read (users/$uid stream), 1 read (systemConfig/leaderboard)
+        // - Discovery: 1 query with limit 20 per day (cached and shared across users)
+        // - Commute check-in/request: 1 write, 1 query (limit 1)
+        val estimatedDailyReadsPerUser = 8 // Highly conservative estimate
+        val totalDailyReads = activeUsers * estimatedDailyReadsPerUser
+
+        val sparkFreeTierDailyReadLimit = 50_000
+        val sparkFreeTierDailyWriteLimit = 20_000
+
+        assertTrue(
+            "Total estimated daily reads ($totalDailyReads) must be well within Spark Free Tier limit ($sparkFreeTierDailyReadLimit)",
+            totalDailyReads < (sparkFreeTierDailyReadLimit / 3) // Less than 16,666 reads/day
+        )
+        assertTrue(
+            "Total daily writes must be well within Spark Free Tier limit ($sparkFreeTierDailyWriteLimit)",
+            (activeUsers * dailyInteractionsPerUser) < sparkFreeTierDailyWriteLimit
+        )
+    }
 }

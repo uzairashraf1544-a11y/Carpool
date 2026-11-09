@@ -13,6 +13,7 @@ import com.example.data.model.RideRequest
 import com.example.data.model.User
 import com.example.util.TravelBuddyNotificationManager
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.SetOptions
@@ -79,6 +80,7 @@ class RideRepository(
             val existingQuery = db.collection("rides")
                 .whereEqualTo("driverId", currentUid)
                 .whereEqualTo("date", date)
+                .limit(1)
                 .get()
                 .await()
 
@@ -172,6 +174,7 @@ class RideRepository(
             val snapshot = db.collection("rides")
                 .whereEqualTo("driverId", driverId)
                 .whereEqualTo("date", date)
+                .limit(1)
                 .get()
                 .await()
             snapshot.documents.mapNotNull { it.toObject(Ride::class.java) }
@@ -285,6 +288,8 @@ class RideRepository(
             val activeQuery = db.collection("passengerNeeds")
                 .whereEqualTo("passengerId", currentUid)
                 .whereEqualTo("date", date)
+                .whereEqualTo("status", PassengerNeed.STATUS_LOOKING)
+                .limit(1)
                 .get()
                 .await()
 
@@ -470,74 +475,29 @@ class RideRepository(
         val currentUid = auth.currentUser?.uid.orEmpty()
         val normalizedSide = MasterData.getSideForPickup(pickupSide).name
 
-        val list1 = mutableListOf<Ride>()
-        val list2 = mutableListOf<Ride>()
-
-        fun emitCombined() {
-            val now = System.currentTimeMillis()
-            val combined = (list1 + list2)
-                .distinctBy { it.rideId }
-                .filter { ride ->
+        // Single consolidated query sharing cache and listener across all users for today
+        val reg = db.collection("rides")
+            .whereEqualTo("date", date)
+            .whereIn("status", listOf(Ride.STATUS_AVAILABLE, Ride.STATUS_PARTIALLY_FULL))
+            .limit(DISCOVERY_LIMIT)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    logFirestoreError("getAvailableDriversFlow", "rides", currentUid, error)
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                val now = System.currentTimeMillis()
+                val rides = snapshot?.documents?.mapNotNull { it.toObject(Ride::class.java) }.orEmpty()
+                val filtered = rides.filter { ride ->
                     ride.driverId != currentUid &&
                         ride.availableSeats > 0 &&
-                        (ride.expiresAt == 0L || ride.expiresAt > now)
+                        (ride.expiresAt == 0L || ride.expiresAt > now) &&
+                        (normalizedSide == "OTHER" || ride.pickupSide == "OTHER" || ride.pickupSide == normalizedSide)
                 }
-            Log.d(TAG, "DRIVER_DISCOVERY | date=$date | pickupSide=$normalizedSide | resultCount=${combined.size}")
-            trySend(combined)
-        }
-
-        if (normalizedSide == "OTHER") {
-            val reg = db.collection("rides")
-                .whereEqualTo("date", date)
-                .whereIn("status", listOf(Ride.STATUS_AVAILABLE, Ride.STATUS_PARTIALLY_FULL))
-                .limit(DISCOVERY_LIMIT)
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null) {
-                        logFirestoreError("getAvailableDriversFlow_OTHER", "rides", currentUid, error)
-                        trySend(emptyList())
-                        return@addSnapshotListener
-                    }
-                    list1.clear()
-                    snapshot?.documents?.mapNotNullTo(list1) { it.toObject(Ride::class.java) }
-                    emitCombined()
-                }
-            awaitClose { reg.remove() }
-        } else {
-            val reg1 = db.collection("rides")
-                .whereEqualTo("date", date)
-                .whereEqualTo("pickupSide", normalizedSide)
-                .whereIn("status", listOf(Ride.STATUS_AVAILABLE, Ride.STATUS_PARTIALLY_FULL))
-                .limit(DISCOVERY_LIMIT)
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null) {
-                        logFirestoreError("getAvailableDriversFlow_side", "rides", currentUid, error)
-                        return@addSnapshotListener
-                    }
-                    list1.clear()
-                    snapshot?.documents?.mapNotNullTo(list1) { it.toObject(Ride::class.java) }
-                    emitCombined()
-                }
-
-            val reg2 = db.collection("rides")
-                .whereEqualTo("date", date)
-                .whereEqualTo("pickupSide", "OTHER")
-                .whereIn("status", listOf(Ride.STATUS_AVAILABLE, Ride.STATUS_PARTIALLY_FULL))
-                .limit(DISCOVERY_LIMIT)
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null) {
-                        logFirestoreError("getAvailableDriversFlow_otherWildcard", "rides", currentUid, error)
-                        return@addSnapshotListener
-                    }
-                    list2.clear()
-                    snapshot?.documents?.mapNotNullTo(list2) { it.toObject(Ride::class.java) }
-                    emitCombined()
-                }
-
-            awaitClose {
-                reg1.remove()
-                reg2.remove()
+                Log.d(TAG, "DRIVER_DISCOVERY | date=$date | pickupSide=$normalizedSide | resultCount=${filtered.size}")
+                trySend(filtered)
             }
-        }
+        awaitClose { reg.remove() }
     }.flowOn(Dispatchers.IO).distinctUntilChanged()
 
     // Legacy overload mapping direction/window to side
@@ -564,73 +524,28 @@ class RideRepository(
         val currentUid = auth.currentUser?.uid.orEmpty()
         val normalizedSide = MasterData.getSideForPickup(pickupSide).name
 
-        val list1 = mutableListOf<PassengerNeed>()
-        val list2 = mutableListOf<PassengerNeed>()
-
-        fun emitCombined() {
-            val now = System.currentTimeMillis()
-            val combined = (list1 + list2)
-                .distinctBy { it.needId }
-                .filter { need ->
+        // Single consolidated query sharing cache and listener across all users for today
+        val reg = db.collection("passengerNeeds")
+            .whereEqualTo("date", date)
+            .whereEqualTo("status", PassengerNeed.STATUS_LOOKING)
+            .limit(DISCOVERY_LIMIT)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    logFirestoreError("getMatchingPassengerNeedsFlow", "passengerNeeds", currentUid, error)
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                val now = System.currentTimeMillis()
+                val needs = snapshot?.documents?.mapNotNull { it.toObject(PassengerNeed::class.java) }.orEmpty()
+                val filtered = needs.filter { need ->
                     need.passengerId != currentUid &&
-                        (need.expiresAt == 0L || need.expiresAt > now)
+                        (need.expiresAt == 0L || need.expiresAt > now) &&
+                        (normalizedSide == "OTHER" || need.pickupSide == "OTHER" || need.pickupSide == normalizedSide)
                 }
-            Log.d(TAG, "PASSENGER_DISCOVERY | date=$date | pickupSide=$normalizedSide | resultCount=${combined.size}")
-            trySend(combined)
-        }
-
-        if (normalizedSide == "OTHER") {
-            val reg = db.collection("passengerNeeds")
-                .whereEqualTo("date", date)
-                .whereEqualTo("status", PassengerNeed.STATUS_LOOKING)
-                .limit(DISCOVERY_LIMIT)
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null) {
-                        logFirestoreError("getMatchingPassengerNeedsFlow_OTHER", "passengerNeeds", currentUid, error)
-                        trySend(emptyList())
-                        return@addSnapshotListener
-                    }
-                    list1.clear()
-                    snapshot?.documents?.mapNotNullTo(list1) { it.toObject(PassengerNeed::class.java) }
-                    emitCombined()
-                }
-            awaitClose { reg.remove() }
-        } else {
-            val reg1 = db.collection("passengerNeeds")
-                .whereEqualTo("date", date)
-                .whereEqualTo("pickupSide", normalizedSide)
-                .whereEqualTo("status", PassengerNeed.STATUS_LOOKING)
-                .limit(DISCOVERY_LIMIT)
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null) {
-                        logFirestoreError("getMatchingPassengerNeedsFlow_side", "passengerNeeds", currentUid, error)
-                        return@addSnapshotListener
-                    }
-                    list1.clear()
-                    snapshot?.documents?.mapNotNullTo(list1) { it.toObject(PassengerNeed::class.java) }
-                    emitCombined()
-                }
-
-            val reg2 = db.collection("passengerNeeds")
-                .whereEqualTo("date", date)
-                .whereEqualTo("pickupSide", "OTHER")
-                .whereEqualTo("status", PassengerNeed.STATUS_LOOKING)
-                .limit(DISCOVERY_LIMIT)
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null) {
-                        logFirestoreError("getMatchingPassengerNeedsFlow_otherWildcard", "passengerNeeds", currentUid, error)
-                        return@addSnapshotListener
-                    }
-                    list2.clear()
-                    snapshot?.documents?.mapNotNullTo(list2) { it.toObject(PassengerNeed::class.java) }
-                    emitCombined()
-                }
-
-            awaitClose {
-                reg1.remove()
-                reg2.remove()
+                Log.d(TAG, "PASSENGER_DISCOVERY | date=$date | pickupSide=$normalizedSide | resultCount=${filtered.size}")
+                trySend(filtered)
             }
-        }
+        awaitClose { reg.remove() }
     }.flowOn(Dispatchers.IO).distinctUntilChanged()
 
     // Legacy overload
@@ -672,6 +587,7 @@ class RideRepository(
             val existingRidesSnapshot = db.collection("rides")
                 .whereEqualTo("driverId", currentUid)
                 .whereEqualTo("date", need.date)
+                .limit(1)
                 .get()
                 .await()
 
@@ -914,6 +830,8 @@ class RideRepository(
                 val needSnapshot = db.collection("passengerNeeds")
                     .whereEqualTo("passengerId", currentUid)
                     .whereEqualTo("date", ride.date)
+                    .whereEqualTo("status", PassengerNeed.STATUS_LOOKING)
+                    .limit(1)
                     .get()
                     .await()
                 needSnapshot.documents.forEach { doc ->
@@ -1432,7 +1350,7 @@ class RideRepository(
     fun getPassengerHistoryFlow(passengerId: String): Flow<List<RideRequest>> = callbackFlow {
         val listener = db.collection("rideRequests")
             .whereEqualTo("passengerId", passengerId)
-            .limit(50)
+            .limit(20)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     logFirestoreError("getPassengerHistoryFlow", "rideRequests", passengerId, error)
@@ -1452,7 +1370,7 @@ class RideRepository(
     fun getDriverRideHistoryFlow(driverId: String): Flow<List<Ride>> = callbackFlow {
         val listener = db.collection("rides")
             .whereEqualTo("driverId", driverId)
-            .limit(50)
+            .limit(20)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     logFirestoreError("getDriverRideHistoryFlow", "rides", driverId, error)
@@ -1506,6 +1424,16 @@ class RideRepository(
             )
             db.collection("co2Records").document(record.recordId).set(record).await()
             Log.d(TAG, "LOGGED_CO2_DRIVER | uid=$driverId | name=$driverName | co2=$co2SavedKg kg")
+            try {
+                db.collection("users").document(driverId).update(
+                    mapOf(
+                        "totalCo2SavedKg" to FieldValue.increment(co2SavedKg),
+                        "totalCompletedRides" to FieldValue.increment(1)
+                    )
+                ).await()
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to increment driver stats: ${e.message}")
+            }
         }
 
         // 2. Log Passenger CO2 Records (each passenger avoids 1 personal trip)
@@ -1532,6 +1460,16 @@ class RideRepository(
             )
             db.collection("co2Records").document(pRecord.recordId).set(pRecord).await()
             Log.d(TAG, "LOGGED_CO2_PASSENGER | uid=$pUid | name=$pName | co2=$pCo2SavedKg kg")
+            try {
+                db.collection("users").document(pUid).update(
+                    mapOf(
+                        "totalCo2SavedKg" to FieldValue.increment(pCo2SavedKg),
+                        "totalCompletedRides" to FieldValue.increment(1)
+                    )
+                ).await()
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to increment passenger stats: ${e.message}")
+            }
         }
 
         // 3. Recalculate and update the backend leaderboard
@@ -1572,54 +1510,44 @@ class RideRepository(
         )
         db.collection("co2Records").document(pRecord.recordId).set(pRecord).await()
         Log.d(TAG, "LOGGED_CO2_PASSENGER | uid=$passengerId | name=$passengerName | co2=$pCo2SavedKg kg")
+        try {
+            db.collection("users").document(passengerId).update(
+                mapOf(
+                    "totalCo2SavedKg" to FieldValue.increment(pCo2SavedKg),
+                    "totalCompletedRides" to FieldValue.increment(1)
+                )
+            ).await()
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to increment passenger stats: ${e.message}")
+        }
 
         syncLeaderboardFromCo2Records()
     }
 
     suspend fun syncLeaderboardFromCo2Records(): Result<Unit> = runCatching {
-        val snapshot = db.collection("co2Records").get().await()
-        if (snapshot.isEmpty) return@runCatching
+        // Fast path: Query top 10 users by totalCo2SavedKg descending (at most 10 reads)
+        val snapshot = try {
+            db.collection("users")
+                .orderBy("totalCo2SavedKg", com.google.firebase.firestore.Query.Direction.DESCENDING)
+                .limit(10)
+                .get()
+                .await()
+        } catch (_: Exception) { null }
 
-        val records = snapshot.documents.mapNotNull { it.toObject(Co2Record::class.java) }
-        if (records.isEmpty()) return@runCatching
-
-        data class Accumulator(
-            val uid: String,
-            val name: String,
-            val department: String,
-            var co2SavedKg: Double = 0.0,
-            var rideCount: Int = 0
-        )
-
-        val userMap = mutableMapOf<String, Accumulator>()
-        for (rec in records) {
-            val uid = rec.driverId
-            if (uid.isBlank()) continue
-            val current = userMap.getOrPut(uid) {
-                Accumulator(
-                    uid = uid,
-                    name = rec.driverName.ifBlank { "Contributor" },
-                    department = rec.driverDepartment.ifBlank { "Operations" }
-                )
-            }
-            current.co2SavedKg += rec.co2SavedKg
-            current.rideCount += 1
-        }
-
-        val topSavers = userMap.values
-            .filter { it.co2SavedKg > 0.0 }
-            .sortedByDescending { it.co2SavedKg }
-            .take(3)
-            .mapIndexed { idx, acc ->
-                mapOf(
-                    "uid" to acc.uid,
-                    "name" to acc.name,
-                    "department" to acc.department,
-                    "co2SavedKg" to acc.co2SavedKg,
-                    "rideCount" to acc.rideCount,
-                    "rank" to idx + 1
-                )
-            }
+        val topSavers = snapshot?.documents?.mapNotNull { doc ->
+            User.fromSnapshot(doc)
+        }?.filter { it.isActive() && it.totalCo2SavedKg > 0.0 }
+        ?.take(3)
+        ?.mapIndexed { idx, u ->
+            mapOf(
+                "uid" to u.uid,
+                "name" to u.name.ifBlank { "Contributor" },
+                "department" to u.department.ifBlank { "Operations" },
+                "co2SavedKg" to u.totalCo2SavedKg,
+                "rideCount" to u.totalCompletedRides,
+                "rank" to idx + 1
+            )
+        }.orEmpty()
 
         if (topSavers.isNotEmpty()) {
             db.collection("systemConfig").document("leaderboard").set(

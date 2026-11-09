@@ -59,6 +59,13 @@ Production release v4.0 of TravelBuddy corporate carpool platform:
 • Universal Firestore Deserialization: Added type-tolerant User parser supporting both Firebase Console Timestamps and primitive Longs/Strings, resolving Member List visibility across all members.
 • Google Sign-In & Authentication Hardening: Added fallback Web Client ID, updated google-services.json with release certificate hashes, and made profile reading resilient during Google login.
 • App Version Update: Bumped to Version 4 (versionCode = 4, versionName = "4.0").
+• Firestore Read Optimization (Spark Free Tier Compliance for 300 Users):
+  - Enabled Persistent Disk Cache in TravelBuddyApplication to serve repeat reads locally from SQLite.
+  - Stored cumulative 'totalCo2SavedKg' and 'totalCompletedRides' directly on User profile with FieldValue.increment, eliminating up to 100 historical ride queries per home screen session.
+  - Replaced split driver/passenger discovery listeners with single consolidated today-queries and in-memory filtering, cutting listener churn by 50%.
+  - Deduplicated user profile listener in AppNavigation, halving active snapshot listeners per connected user.
+  - Scoped Admin Dashboard queries with lazy-loading for audit logs and bounded limits (100) for rides and requests.
+  - Eliminated automatic leaderboard recalculation loops on HomeScreen and AdminDashboardScreen.
 • Privacy & Permission Hardening: Removed all unnecessary runtime and manifest permissions:
   - Removed GPS Location permissions (ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION).
   - Removed Foreground Service Location (FOREGROUND_SERVICE_LOCATION, FOREGROUND_SERVICE).

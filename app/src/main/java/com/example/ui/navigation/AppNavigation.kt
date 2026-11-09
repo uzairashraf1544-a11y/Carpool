@@ -41,7 +41,6 @@ fun AppNavigation(
     openCommuteSlotId: String? = null
 ) {
     val authState by authRepository.authStateFlow.collectAsState(initial = AuthState.Loading)
-    val currentUserState by userRepository.getCurrentUserFlow().collectAsState(initial = null)
 
     when (val state = authState) {
         is AuthState.Loading -> {
@@ -79,11 +78,11 @@ fun AppNavigation(
                         openCommuteSlotId = openCommuteSlotId
                     )
                 }
-                currentUserState == null && state.userProfile == null -> {
+                state.userProfile == null -> {
                     SplashScreen(message = "Loading your profile…")
                 }
                 else -> {
-                    val user = currentUserState ?: state.userProfile!!
+                    val user = state.userProfile
                     val startDest = if (user.isPendingApproval()) "pending_approval" else "home"
                     MainNavigation(
                         startDestination = startDest,

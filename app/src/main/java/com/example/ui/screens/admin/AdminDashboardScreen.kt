@@ -33,6 +33,7 @@ import com.example.ui.components.ErrorContainer
 import com.example.ui.theme.*
 import com.example.util.ManagementReportRow
 import com.example.util.ReportExporter
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.time.LocalDate
@@ -62,10 +63,13 @@ fun AdminDashboardScreen(
     val users by adminRepository.getAllUsersFlow().collectAsState(initial = emptyList())
     val rides by adminRepository.getAllRidesFlow().collectAsState(initial = emptyList())
     val requests by adminRepository.getAllRideRequestsFlow().collectAsState(initial = emptyList())
-    val auditLogs by adminRepository.getAuditLogsFlow().collectAsState(initial = emptyList())
     val config by adminRepository.getSystemConfigFlow().collectAsState(initial = com.example.data.model.SystemConfig())
 
     var selectedTab by remember { mutableIntStateOf(0) }
+    // Only stream audit logs when the admin actually views the Audit Logs tab (index 5)
+    val auditLogs by remember(selectedTab) {
+        if (selectedTab == 5) adminRepository.getAuditLogsFlow() else flowOf(emptyList())
+    }.collectAsState(initial = emptyList())
     val pendingApprovalsCount = users.count { it.isPendingApproval() }
     val pendingUsers = remember(users) {
         users.filter { it.isPendingApproval() }
@@ -248,25 +252,6 @@ fun AdminDashboardScreen(
         }
 
         sortedRows.mapIndexed { index, row -> row.copy(serialNumber = index + 1) }
-    }
-
-    // Auto-sync real Top 3 Community CO2 Savers to systemConfig/leaderboard for all members
-    LaunchedEffect(managementReportRows) {
-        val top3Rows = managementReportRows.filter { it.co2Saved > 0.0 }.take(3)
-        if (top3Rows.isNotEmpty()) {
-            val topEntries = top3Rows.mapIndexed { idx, row ->
-                val userObj = users.firstOrNull { it.name == row.personName || it.uid == row.personName }
-                LeaderboardEntry(
-                    uid = userObj?.uid.orEmpty(),
-                    name = row.personName,
-                    department = userObj?.department.orEmpty().ifBlank { "Operations" },
-                    co2SavedKg = row.co2Saved,
-                    rideCount = row.ridesAsDriver + row.ridesAsPassenger,
-                    rank = idx + 1
-                )
-            }
-            adminRepository.updateLeaderboard(topEntries)
-        }
     }
 
     // Report Period Summary Metrics

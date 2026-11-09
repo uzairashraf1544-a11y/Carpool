@@ -329,14 +329,6 @@ fun HomeScreen(
         }
     }.collectAsState(initial = emptyList())
 
-    val passengerHistory by remember(user.uid) {
-        rideRepository.getPassengerHistoryFlow(user.uid)
-    }.collectAsState(initial = emptyList())
-
-    val driverHistory by remember(user.uid) {
-        rideRepository.getDriverRideHistoryFlow(user.uid)
-    }.collectAsState(initial = emptyList())
-
     val systemConfig by remember {
         adminRepository.getSystemConfigFlow()
     }.collectAsState(initial = SystemConfig())
@@ -359,24 +351,10 @@ fun HomeScreen(
     val totalDrivers = availableDrivers.size
     val totalAvailableSeats = availableDrivers.sumOf { it.availableSeats }
 
-    // PASSENGER PERSONAL IMPACT CALCULATION
-    val eligibleCompletedPassengerRides = passengerHistory.filter { it.status == RideRequest.STATUS_COMPLETED }
-    val eligiblePassengerCompletedRidesCount = eligibleCompletedPassengerRides.size
-    val userAvoidedKm = eligiblePassengerCompletedRidesCount * systemConfig.baselineDistanceKm
-    val userCo2SavedKg = userAvoidedKm * systemConfig.co2FactorKgPerKm
-
-    // DRIVER PERSONAL IMPACT CALCULATION
-    val completedDriverRides = driverHistory.filter { it.status == Ride.STATUS_COMPLETED }
-    val driverCompletedRidesCount = completedDriverRides.size
-    val totalPassengersDriven = completedDriverRides.sumOf {
-        if (it.finalPassengerCount > 0) it.finalPassengerCount else it.completedPassengerIds.size.coerceAtLeast(it.acceptedPassengerIds.size)
-    }
-    val driverAvoidedKm = totalPassengersDriven * systemConfig.baselineDistanceKm
-    val driverCo2SavedKg = driverAvoidedKm * systemConfig.co2FactorKgPerKm
-
-    // COMMUNITY & PERSONAL TOTAL IMPACT (UNIFIED ACROSS MODES)
-    val userTotalCo2SavedKg = userCo2SavedKg + driverCo2SavedKg
-    val userTotalCompletedRides = eligiblePassengerCompletedRidesCount + driverCompletedRidesCount
+    // COMMUNITY & PERSONAL TOTAL IMPACT (UNIFIED ACROSS MODES - STORED DIRECTLY ON USER PROFILE FOR ZERO EXTRA READS)
+    val userTotalCo2SavedKg = user.totalCo2SavedKg
+    val userTotalCompletedRides = user.totalCompletedRides
+    val userAvoidedKm = userTotalCompletedRides * systemConfig.baselineDistanceKm
 
     val displayLeaderboardEntries = remember(
         topCo2Savers,
@@ -410,13 +388,6 @@ fun HomeScreen(
                 rank = idx + 1,
                 isCurrentUser = entry.uid == user.uid || (userEntry != null && entry.uid == userEntry.uid)
             )
-        }
-    }
-
-    // Auto-calculate real leaderboard from backend rides when admin visits home
-    LaunchedEffect(user.effectiveRole) {
-        if (user.isAdmin()) {
-            adminRepository.recalculateAndSyncLeaderboard()
         }
     }
 
@@ -1582,7 +1553,7 @@ fun HomeScreen(
                             ) {
                                 ImpactMetricItem(
                                     iconRes = R.drawable.metric_shared_rides,
-                                    value = "$eligiblePassengerCompletedRidesCount",
+                                    value = "$userTotalCompletedRides",
                                     label = "Shared Rides",
                                     modifier = Modifier.weight(1f)
                                 )
@@ -1594,7 +1565,7 @@ fun HomeScreen(
                                 )
                                 ImpactMetricItem(
                                     iconRes = R.drawable.metric_co2,
-                                    value = String.format(Locale.US, "%.1f kg", userCo2SavedKg),
+                                    value = String.format(Locale.US, "%.1f kg", userTotalCo2SavedKg),
                                     label = "CO₂ Saved",
                                     modifier = Modifier.weight(1f)
                                 )
@@ -1973,19 +1944,19 @@ fun HomeScreen(
                             ) {
                                 ImpactMetricItem(
                                     iconRes = R.drawable.metric_shared_rides,
-                                    value = "$driverCompletedRidesCount",
+                                    value = "$userTotalCompletedRides",
                                     label = "Shared Rides",
                                     modifier = Modifier.weight(1f)
                                 )
                                 ImpactMetricItem(
                                     iconRes = R.drawable.metric_distance,
-                                    value = "$totalPassengersDriven",
-                                    label = "Passengers",
+                                    value = String.format(Locale.US, "%.0f km", userAvoidedKm),
+                                    label = "Avoided",
                                     modifier = Modifier.weight(1f)
                                 )
                                 ImpactMetricItem(
                                     iconRes = R.drawable.metric_co2,
-                                    value = String.format(Locale.US, "%.1f kg", driverCo2SavedKg),
+                                    value = String.format(Locale.US, "%.1f kg", userTotalCo2SavedKg),
                                     label = "CO₂ Saved",
                                     modifier = Modifier.weight(1f)
                                 )
