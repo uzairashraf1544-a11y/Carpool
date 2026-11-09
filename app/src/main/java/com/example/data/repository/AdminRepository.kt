@@ -7,9 +7,12 @@ import com.example.data.model.Ride
 import com.example.data.model.RideRequest
 import com.example.data.model.SystemConfig
 import com.example.data.model.User
+import com.example.util.ManagementReportRow
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.MetadataChanges
+import com.google.firebase.firestore.Source
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -576,7 +579,8 @@ class AdminRepository(
 
     fun getPendingApprovalsFlow(): Flow<List<User>> = callbackFlow {
         val listener = db.collection("users")
-            .addSnapshotListener { snapshot, error ->
+            .whereEqualTo("accountStatus", User.STATUS_PENDING_APPROVAL)
+            .addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
                 if (error != null) {
                     Log.w("AdminRepository", "getPendingApprovalsFlow listener error: ${error.message}", error)
                     trySend(emptyList())
@@ -595,6 +599,126 @@ class AdminRepository(
             }
         awaitClose { listener.remove() }
     }.flowOn(Dispatchers.IO).distinctUntilChanged()
+
+    /**
+     * Direct one-shot server query for pending approvals to guarantee instantaneous updates.
+     */
+    suspend fun fetchPendingApprovals(forceServer: Boolean = true): Result<List<User>> = runCatching {
+        val source = if (forceServer) Source.SERVER else Source.DEFAULT
+        val snapshot = db.collection("users")
+            .whereEqualTo("accountStatus", User.STATUS_PENDING_APPROVAL)
+            .get(source)
+            .await()
+        snapshot.documents.mapNotNull { doc ->
+            try {
+                User.fromSnapshot(doc)?.takeIf { it.isPendingApproval() }
+            } catch (_: Exception) { null }
+        }.sortedByDescending { it.approvalRequestedAt.takeIf { t -> t > 0L } ?: it.createdAt }
+    }
+
+    /**
+     * Fetch the management report as a SINGLE Firestore document read (systemConfig/managementReport).
+     * Costs EXACTLY 1 read for all 300+ employees.
+     */
+    suspend fun fetchManagementReport(forceServer: Boolean = true): Result<Pair<List<ManagementReportRow>, Long>> = runCatching {
+        val source = if (forceServer) Source.SERVER else Source.DEFAULT
+        val docRef = db.collection("systemConfig").document("managementReport")
+        val doc = try {
+            docRef.get(source).await()
+        } catch (_: Exception) {
+            docRef.get(Source.DEFAULT).await()
+        }
+
+        if (doc != null && doc.exists()) {
+            val timestamp = doc.getLong("updatedAt") ?: System.currentTimeMillis()
+            @Suppress("UNCHECKED_CAST")
+            val rawList = doc.get("rows") as? List<Map<String, Any>>
+            if (!rawList.isNullOrEmpty()) {
+                val rows = rawList.mapIndexed { idx, map ->
+                    ManagementReportRow(
+                        serialNumber = (map["serialNumber"] as? Number)?.toInt() ?: (idx + 1),
+                        personName = map["personName"] as? String ?: "User",
+                        co2Saved = (map["co2Saved"] as? Number)?.toDouble() ?: 0.0,
+                        ridesAsDriver = (map["ridesAsDriver"] as? Number)?.toInt() ?: 0,
+                        ridesAsPassenger = (map["ridesAsPassenger"] as? Number)?.toInt() ?: 0
+                    )
+                }
+                return@runCatching Pair(rows, timestamp)
+            }
+        }
+
+        // If not found or empty, aggregate once, persist to single document, and return
+        recalculateAndPersistManagementReport().getOrThrow()
+    }
+
+    /**
+     * Recalculates the management report, writes it to the single document systemConfig/managementReport,
+     * and returns the rows with the timestamp.
+     */
+    suspend fun recalculateAndPersistManagementReport(): Result<Pair<List<ManagementReportRow>, Long>> = runCatching {
+        val now = System.currentTimeMillis()
+        val usersSnap = db.collection("users").get().await()
+        val usersList = usersSnap.documents.mapNotNull { User.fromSnapshot(it) }
+
+        val ridesSnap = db.collection("rides").whereEqualTo("status", Ride.STATUS_COMPLETED).get().await()
+        val completedRides = ridesSnap.documents.mapNotNull { it.toObject(Ride::class.java) }
+
+        val reqsSnap = db.collection("rideRequests").whereEqualTo("status", RideRequest.STATUS_COMPLETED).get().await()
+        val completedRequests = reqsSnap.documents.mapNotNull { it.toObject(RideRequest::class.java) }
+
+        val sysConfigDoc = try { db.collection("systemConfig").document("sustainability").get().await() } catch (_: Exception) { null }
+        val baselineDistanceKm = sysConfigDoc?.getDouble("baselineDistanceKm") ?: 3.0
+        val co2Factor = sysConfigDoc?.getDouble("co2FactorKgPerKm") ?: 0.12
+
+        val rawRows = usersList.map { person ->
+            val driverRides = completedRides.filter { it.driverId == person.uid }
+            val driverRideCount = driverRides.size
+            val passengersDelivered = driverRides.sumOf {
+                if (it.finalPassengerCount > 0) it.finalPassengerCount else it.completedPassengerIds.size.coerceAtLeast(it.acceptedPassengerIds.size)
+            }
+
+            val passengerReqs = completedRequests.filter { it.passengerId == person.uid }
+            val passengerRideCount = passengerReqs.size
+
+            val avoidedDistanceKm = (passengersDelivered + passengerRideCount) * baselineDistanceKm
+            val personCo2Saved = avoidedDistanceKm * co2Factor
+
+            ManagementReportRow(
+                serialNumber = 0,
+                personName = person.name.ifBlank { "User ${person.uid.take(5)}" },
+                co2Saved = personCo2Saved,
+                ridesAsDriver = driverRideCount,
+                ridesAsPassenger = passengerRideCount
+            )
+        }.sortedByDescending { it.co2Saved }.mapIndexed { index, row ->
+            row.copy(serialNumber = index + 1)
+        }
+
+        val rowsMap = rawRows.map { row ->
+            mapOf(
+                "serialNumber" to row.serialNumber,
+                "personName" to row.personName,
+                "co2Saved" to row.co2Saved,
+                "ridesAsDriver" to row.ridesAsDriver,
+                "ridesAsPassenger" to row.ridesAsPassenger
+            )
+        }
+
+        val reportDocData = mapOf(
+            "rows" to rowsMap,
+            "updatedAt" to now,
+            "totalMembers" to rawRows.size,
+            "totalCo2Saved" to rawRows.sumOf { it.co2Saved },
+            "totalDriverRides" to completedRides.size,
+            "totalPassengerRides" to completedRequests.size
+        )
+
+        db.collection("systemConfig").document("managementReport")
+            .set(reportDocData, com.google.firebase.firestore.SetOptions.merge())
+            .await()
+
+        Pair(rawRows, now)
+    }
 
     suspend fun approveUser(adminUser: User, targetUser: User): Result<Unit> {
         return runCatching {

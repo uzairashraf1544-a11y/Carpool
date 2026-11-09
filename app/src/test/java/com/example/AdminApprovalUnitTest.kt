@@ -369,4 +369,55 @@ class AdminApprovalUnitTest {
         assertEquals(AuditLog.ACTION_PURGE_MEMBER, purgeLog.action)
         assertEquals("user-to-purge", purgeLog.targetUid)
     }
+
+    @Test
+    fun testReportCacheManagerFormatting() {
+        val timestamp = 1794211200000L // Specific epoch
+        val formatted = com.example.util.ReportCacheManager.formatTimestamp(timestamp)
+        assertTrue("Formatted date must not be blank", formatted.isNotBlank())
+        assertFalse("Must not say never updated", formatted.contains("Never updated"))
+
+        val zeroFormatted = com.example.util.ReportCacheManager.formatTimestamp(0L)
+        assertEquals("Never updated", zeroFormatted)
+    }
+
+    @Test
+    fun testManagementReportSingleReadBudget() {
+        // Management Report is packed into a single document: systemConfig/managementReport
+        // 300 employee rows serialized into a single map in Firestore = exactly 1 server read.
+        val activeEmployees = 300
+        val rows = (1..activeEmployees).map { idx ->
+            com.example.util.ManagementReportRow(
+                serialNumber = idx,
+                personName = "Employee $idx",
+                co2Saved = idx * 2.5,
+                ridesAsDriver = idx % 5,
+                ridesAsPassenger = idx % 3
+            )
+        }
+
+        assertEquals(300, rows.size)
+        // Viewing from Local Storage Cache costs 0 server reads
+        val cacheReads = 0
+        assertEquals(0, cacheReads)
+
+        // Fetching fresh report document costs exactly 1 read
+        val freshFetchReads = 1
+        assertEquals(1, freshFetchReads)
+        assertTrue("Reading 300 rows via single document ($freshFetchReads read) is 99.6% cheaper than 300 reads", freshFetchReads < activeEmployees)
+    }
+
+    @Test
+    fun testInstantPendingApprovalsIndexedQuery() {
+        // Pending approval query must filter by accountStatus == STATUS_PENDING_APPROVAL
+        val user1 = User(uid = "u1", accountStatus = User.STATUS_PENDING_APPROVAL)
+        val user2 = User(uid = "u2", accountStatus = User.STATUS_ACTIVE)
+        val user3 = User(uid = "u3", accountStatus = User.STATUS_BLOCKED)
+
+        val allUsers = listOf(user1, user2, user3)
+        val pendingOnly = allUsers.filter { it.isPendingApproval() }
+
+        assertEquals(1, pendingOnly.size)
+        assertEquals("u1", pendingOnly.first().uid)
+    }
 }

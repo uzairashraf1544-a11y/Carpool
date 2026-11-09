@@ -28,9 +28,9 @@ fun ErrorContainer(
         message.contains("network", ignoreCase = true) || message.contains("unavailable", ignoreCase = true) -> {
             "No internet connection. Check your connection and try again."
         }
-        message.contains("session has expired", ignoreCase = true) ||
-        message.contains("session_expired", ignoreCase = true) ||
-        message.contains("token_expired", ignoreCase = true) -> {
+        message.equals("SESSION_EXPIRED", ignoreCase = true) ||
+        message.equals("session_expired", ignoreCase = true) ||
+        message.equals("Your session has expired. Please sign in again.", ignoreCase = true) -> {
             "Your session has expired. Please sign in again."
         }
         message.isNotBlank() -> message

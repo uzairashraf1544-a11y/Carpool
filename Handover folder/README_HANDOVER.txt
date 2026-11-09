@@ -56,9 +56,17 @@ installations.
 2. RELEASE NOTES FOR THIS VERSION (v4.0 / VersionCode 4)
 --------------------------------------------------------------------------------
 Production release v4.0 of TravelBuddy corporate carpool platform:
-• Universal Firestore Deserialization: Added type-tolerant User parser supporting both Firebase Console Timestamps and primitive Longs/Strings, resolving Member List visibility across all members.
-• Google Sign-In & Authentication Hardening: Added fallback Web Client ID, updated google-services.json with release certificate hashes, and made profile reading resilient during Google login.
-• App Version Update: Bumped to Version 4 (versionCode = 4, versionName = "4.0").
+• Admin Reports Local Storage Caching & On-Demand Refresh:
+  - Reports table data is loaded directly from local device cache (ReportCacheManager) on launch, costing exactly 0 Firestore reads.
+  - "Last updated: [Date & Time]" timestamp header card displays when data was last synchronized.
+  - "REFRESH DATA" button: fetches fresh aggregate data from Firestore (systemConfig/managementReport), updates local storage cache, and refreshes the screen table and timestamp.
+  - "DOWNLOAD CSV" button: fetches fresh data from Firestore, updates local storage cache + screen table + timestamp simultaneously, and exports/shares the fresh CSV file.
+  - Single Document Management Report (systemConfig/managementReport): aggregates all 300+ employees into a single document, reducing Firestore read cost by 99.6% (1 document read vs 300 individual document reads).
+• Instant Pending User Approvals (Eliminated 1-2 Minute Admin Delay):
+  - Created targeted indexed query (accountStatus == STATUS_PENDING_APPROVAL) with MetadataChanges.INCLUDE for sub-second real-time push to the Admin panel.
+  - Added dedicated one-shot manual refresh button on Pending Approvals tab for immediate on-demand server sync.
+• Real-Time Ride Delivery Verification:
+  - Verified instant snapshot triggers for passenger needs, driver offers, and incoming requests with active notification delivery across all users.
 • Admin Dual-Option Member Removal (Soft Deactivation vs Complete Zero-Trace Purge):
   - Option 1 (Deactivate Member): Revokes app access immediately while safely preserving all historical rides, rideRequests, and CO₂ sustainability records for company reporting.
   - Option 2 (Complete Purge): Permanently erases all traces of the user from Firestore (users collection, active locks, passenger needs, ride requests, vehicle listings, and personal CO₂ records) using atomic batch deletion with administrative audit logging.
@@ -70,6 +78,8 @@ Production release v4.0 of TravelBuddy corporate carpool platform:
   - Deduplicated user profile listener in AppNavigation, halving active snapshot listeners per connected user.
   - Scoped Admin Dashboard queries with lazy-loading for audit logs and bounded limits (100) for rides and requests.
   - Eliminated automatic leaderboard recalculation loops on HomeScreen and AdminDashboardScreen.
+• Session & Login Error Clarity:
+  - Removed misleading session expired error masks. Accurate error feedback is shown for invalid credentials, unregistered emails, and unlinked Google accounts.
 • Privacy & Permission Hardening: Removed all unnecessary runtime and manifest permissions:
   - Removed GPS Location permissions (ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION).
   - Removed Foreground Service Location (FOREGROUND_SERVICE_LOCATION, FOREGROUND_SERVICE).

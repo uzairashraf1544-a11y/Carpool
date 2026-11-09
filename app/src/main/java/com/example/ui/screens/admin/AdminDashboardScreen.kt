@@ -33,6 +33,7 @@ import com.example.data.repository.AdminRepository
 import com.example.ui.components.ErrorContainer
 import com.example.ui.theme.*
 import com.example.util.ManagementReportRow
+import com.example.util.ReportCacheManager
 import com.example.util.ReportExporter
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -71,11 +72,8 @@ fun AdminDashboardScreen(
     val auditLogs by remember(selectedTab) {
         if (selectedTab == 5) adminRepository.getAuditLogsFlow() else flowOf(emptyList())
     }.collectAsState(initial = emptyList())
-    val pendingApprovalsCount = users.count { it.isPendingApproval() }
-    val pendingUsers = remember(users) {
-        users.filter { it.isPendingApproval() }
-            .sortedByDescending { it.approvalRequestedAt.takeIf { t -> t > 0L } ?: it.createdAt }
-    }
+    val pendingUsers by adminRepository.getPendingApprovalsFlow().collectAsState(initial = emptyList())
+    val pendingApprovalsCount = pendingUsers.size
     val tabs = if (pendingApprovalsCount > 0) {
         listOf("Overview", "Pending ($pendingApprovalsCount)", "Members", "Reports", "Analytics", "Audit Logs", "Settings")
     } else {
@@ -94,6 +92,13 @@ fun AdminDashboardScreen(
     var purgeCompletely by remember { mutableStateOf(false) }
     var isExecutingAction by remember { mutableStateOf(false) }
 
+    // Management Report Local Storage Cached State
+    var cachedReportRows by remember { mutableStateOf<List<ManagementReportRow>>(emptyList()) }
+    var reportLastUpdatedTimestamp by remember { mutableLongStateOf(0L) }
+    var isReportRefreshing by remember { mutableStateOf(false) }
+    var isCsvDownloading by remember { mutableStateOf(false) }
+    var isPendingRefreshing by remember { mutableStateOf(false) }
+
     // Sustainability settings
     var baselineText by remember { mutableStateOf(config.baselineDistanceKm.toString()) }
     var factorText by remember { mutableStateOf(config.co2FactorKgPerKm.toString()) }
@@ -107,6 +112,25 @@ fun AdminDashboardScreen(
     var reportToDate by remember { mutableStateOf("") }
     var reportStatusFilter by remember { mutableStateOf("All") }
     var reportSortBy by remember { mutableStateOf("CO2_DESC") } // CO2_DESC, NAME_ASC, DRIVER_DESC, PASSENGER_DESC
+
+    // Load Report from Local Storage Cache on Launch (0 Firestore reads)
+    LaunchedEffect(Unit) {
+        val cached = ReportCacheManager.getCachedReport(context)
+        if (cached.rows.isNotEmpty()) {
+            cachedReportRows = cached.rows
+            reportLastUpdatedTimestamp = cached.lastUpdatedTimestamp
+        } else {
+            // First-time load: populate cache with single Firestore read (systemConfig/managementReport)
+            isReportRefreshing = true
+            adminRepository.fetchManagementReport(forceServer = false)
+                .onSuccess { (rows, ts) ->
+                    cachedReportRows = rows
+                    reportLastUpdatedTimestamp = ts
+                    ReportCacheManager.saveReportCache(context, rows, ts)
+                }
+            isReportRefreshing = false
+        }
+    }
 
     LaunchedEffect(config) {
         baselineText = config.baselineDistanceKm.toString()
@@ -206,52 +230,64 @@ fun AdminDashboardScreen(
         completedRequests.filter { isDateInRange(it.date) }
     }
 
-    // Management Report Row Aggregations (One row per person)
+    // Management Report Row Aggregations (One row per person - Local Storage Cache Priority)
     val managementReportRows: List<ManagementReportRow> = remember(
+        cachedReportRows,
         users,
         periodCompletedRides,
         periodCompletedRequests,
         config,
         reportStatusFilter,
-        reportSortBy
+        reportSortBy,
+        search
     ) {
-        val filteredUsersForReport = users.filter { u ->
-            when (reportStatusFilter) {
-                "Active" -> u.isActive()
-                "Blocked" -> u.isBlocked()
-                "Removed" -> u.isRemoved()
-                else -> true
+        val baseRows = if (cachedReportRows.isNotEmpty()) {
+            cachedReportRows
+        } else {
+            val filteredUsersForReport = users.filter { u ->
+                when (reportStatusFilter) {
+                    "Active" -> u.isActive()
+                    "Blocked" -> u.isBlocked()
+                    "Removed" -> u.isRemoved()
+                    else -> true
+                }
+            }
+
+            filteredUsersForReport.map { person ->
+                val driverRides = periodCompletedRides.filter { it.driverId == person.uid }
+                val driverRideCount = driverRides.size
+                val passengersDelivered = driverRides.sumOf {
+                    if (it.finalPassengerCount > 0) it.finalPassengerCount else it.completedPassengerIds.size.coerceAtLeast(it.acceptedPassengerIds.size)
+                }
+
+                val passengerReqs = periodCompletedRequests.filter { it.passengerId == person.uid }
+                val passengerRideCount = passengerReqs.size
+
+                val avoidedDistanceKm = (passengersDelivered + passengerRideCount) * config.baselineDistanceKm
+                val personCo2Saved = avoidedDistanceKm * config.co2FactorKgPerKm
+
+                ManagementReportRow(
+                    serialNumber = 0, // Assigned after sorting
+                    personName = person.name.ifBlank { "User ${person.uid.take(5)}" },
+                    co2Saved = personCo2Saved,
+                    ridesAsDriver = driverRideCount,
+                    ridesAsPassenger = passengerRideCount
+                )
             }
         }
 
-        val rawRows = filteredUsersForReport.map { person ->
-            val driverRides = periodCompletedRides.filter { it.driverId == person.uid }
-            val driverRideCount = driverRides.size
-            val passengersDelivered = driverRides.sumOf {
-                if (it.finalPassengerCount > 0) it.finalPassengerCount else it.completedPassengerIds.size.coerceAtLeast(it.acceptedPassengerIds.size)
-            }
-
-            val passengerReqs = periodCompletedRequests.filter { it.passengerId == person.uid }
-            val passengerRideCount = passengerReqs.size
-
-            val avoidedDistanceKm = (passengersDelivered + passengerRideCount) * config.baselineDistanceKm
-            val personCo2Saved = avoidedDistanceKm * config.co2FactorKgPerKm
-
-            ManagementReportRow(
-                serialNumber = 0, // Assigned after sorting
-                personName = person.name.ifBlank { "User ${person.uid.take(5)}" },
-                co2Saved = personCo2Saved,
-                ridesAsDriver = driverRideCount,
-                ridesAsPassenger = passengerRideCount
-            )
+        val filteredBySearch = if (search.isNotBlank()) {
+            baseRows.filter { it.personName.contains(search, ignoreCase = true) }
+        } else {
+            baseRows
         }
 
         val sortedRows = when (reportSortBy) {
-            "CO2_DESC" -> rawRows.sortedByDescending { it.co2Saved }
-            "NAME_ASC" -> rawRows.sortedBy { it.personName.lowercase() }
-            "DRIVER_DESC" -> rawRows.sortedByDescending { it.ridesAsDriver }
-            "PASSENGER_DESC" -> rawRows.sortedByDescending { it.ridesAsPassenger }
-            else -> rawRows.sortedByDescending { it.co2Saved }
+            "CO2_DESC" -> filteredBySearch.sortedByDescending { it.co2Saved }
+            "NAME_ASC" -> filteredBySearch.sortedBy { it.personName.lowercase() }
+            "DRIVER_DESC" -> filteredBySearch.sortedByDescending { it.ridesAsDriver }
+            "PASSENGER_DESC" -> filteredBySearch.sortedByDescending { it.ridesAsPassenger }
+            else -> filteredBySearch.sortedByDescending { it.co2Saved }
         }
 
         sortedRows.mapIndexed { index, row -> row.copy(serialNumber = index + 1) }
@@ -819,7 +855,32 @@ fun AdminDashboardScreen(
                     // TAB 1: PENDING APPROVALS
                     // =========================================================
                     1 -> {
-                        SectionTitle("PENDING USER APPROVALS")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            SectionTitle("PENDING USER APPROVALS")
+                            IconButton(
+                                onClick = {
+                                    scope.launch {
+                                        isPendingRefreshing = true
+                                        val res = adminRepository.fetchPendingApprovals(forceServer = true)
+                                        isPendingRefreshing = false
+                                        if (res.isSuccess) {
+                                            Toast.makeText(context, "Pending approvals synced (${res.getOrThrow().size} pending)", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                },
+                                enabled = !isPendingRefreshing
+                            ) {
+                                if (isPendingRefreshing) {
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Primary)
+                                } else {
+                                    Icon(Icons.Rounded.Refresh, contentDescription = "Refresh Pending Approvals", tint = Primary)
+                                }
+                            }
+                        }
                         Text(
                             "${pendingUsers.size} request${if (pendingUsers.size != 1) "s" else ""} awaiting administrator verification.",
                             color = TextSecondary,
@@ -1038,6 +1099,50 @@ fun AdminDashboardScreen(
                     3 -> {
                         SectionTitle("MANAGEMENT REPORT")
 
+                        // LOCAL STORAGE CACHE STATUS & LAST UPDATED TIMESTAMP BANNER
+                        Card(
+                            modifier = Modifier.fillMaxWidth().border(1.dp, PrimaryLight, RoundedCornerShape(14.dp)),
+                            colors = CardDefaults.cardColors(containerColor = PrimaryLight.copy(alpha = 0.25f)),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Schedule,
+                                        contentDescription = null,
+                                        tint = PrimaryDark,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            text = "Last updated: ${ReportCacheManager.formatTimestamp(reportLastUpdatedTimestamp)}",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.5.sp,
+                                            color = PrimaryDark
+                                        )
+                                        Text(
+                                            text = "Data served from local device storage (0 server reads)",
+                                            fontSize = 11.sp,
+                                            color = TextSecondary
+                                        )
+                                    }
+                                }
+                                if (isReportRefreshing || isCsvDownloading) {
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = PrimaryDark)
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(14.dp))
+
                         // 1. SUMMARY CARDS ABOVE REPORT
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             ReportSummaryMiniCard("TOTAL MEMBERS", "$reportTotalMembers", Modifier.weight(1f))
@@ -1049,7 +1154,7 @@ fun AdminDashboardScreen(
                             ReportSummaryMiniCard("PASSENGER RIDES", "$reportTotalPassengerRides", Modifier.weight(1f))
                         }
 
-                        Spacer(Modifier.height(18.dp))
+                        Spacer(Modifier.height(16.dp))
 
                         // 2. PERIOD & STATUS FILTERS
                         Card(
@@ -1110,23 +1215,81 @@ fun AdminDashboardScreen(
 
                         Spacer(Modifier.height(16.dp))
 
-                        // 3. CSV DOWNLOAD BUTTON
-                        Button(
-                            onClick = {
-                                try {
-                                    ReportExporter.exportAndShareCsv(context, managementReportRows)
-                                    Toast.makeText(context, "Management Report CSV generated!", Toast.LENGTH_SHORT).show()
-                                } catch (e: Exception) {
-                                    statusMessage = "Couldn't generate CSV: ${e.message}"
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth().height(48.dp),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryDark)
+                        // 3. DUAL ACTION BUTTONS: REFRESH DATA & DOWNLOAD CSV
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Icon(Icons.Rounded.FileDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("DOWNLOAD CSV", fontWeight = FontWeight.Bold)
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        isReportRefreshing = true
+                                        statusMessage = "Fetching fresh report from Firestore…"
+                                        val res = adminRepository.fetchManagementReport(forceServer = true)
+                                        isReportRefreshing = false
+                                        res.onSuccess { (freshRows, ts) ->
+                                            cachedReportRows = freshRows
+                                            reportLastUpdatedTimestamp = ts
+                                            ReportCacheManager.saveReportCache(context, freshRows, ts)
+                                            statusMessage = "Report refreshed successfully from Firestore!"
+                                            Toast.makeText(context, "Report refreshed from Firestore!", Toast.LENGTH_SHORT).show()
+                                        }.onFailure { err ->
+                                            statusMessage = "Failed to refresh report: ${err.message}"
+                                            Toast.makeText(context, "Refresh failed: ${err.message}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.weight(1f).height(48.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Primary),
+                                enabled = !isReportRefreshing && !isCsvDownloading
+                            ) {
+                                if (isReportRefreshing) {
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                                } else {
+                                    Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("REFRESH DATA", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
+
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        isCsvDownloading = true
+                                        statusMessage = "Fetching fresh report and downloading CSV…"
+                                        val res = adminRepository.fetchManagementReport(forceServer = true)
+                                        isCsvDownloading = false
+                                        val rowsToExport = if (res.isSuccess) {
+                                            val (freshRows, ts) = res.getOrThrow()
+                                            cachedReportRows = freshRows
+                                            reportLastUpdatedTimestamp = ts
+                                            ReportCacheManager.saveReportCache(context, freshRows, ts)
+                                            freshRows
+                                        } else {
+                                            managementReportRows
+                                        }
+                                        try {
+                                            ReportExporter.exportAndShareCsv(context, rowsToExport)
+                                            Toast.makeText(context, "Fresh CSV generated & cache updated!", Toast.LENGTH_SHORT).show()
+                                        } catch (e: Exception) {
+                                            statusMessage = "Couldn't generate CSV: ${e.message}"
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.weight(1f).height(48.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryDark),
+                                enabled = !isReportRefreshing && !isCsvDownloading
+                            ) {
+                                if (isCsvDownloading) {
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                                } else {
+                                    Icon(Icons.Rounded.FileDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("DOWNLOAD CSV", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
                         }
 
                         Spacer(Modifier.height(18.dp))
