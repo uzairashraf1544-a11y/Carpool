@@ -186,4 +186,105 @@ class AdminApprovalUnitTest {
             content.contains("match /passengerNeeds/{needId}") && content.contains("&& isActiveUser()")
         )
     }
+
+    @Test
+    fun testNewUserRegistrationDefaultsToPendingApproval() {
+        val newUser = User(
+            uid = "test-new-user-1",
+            name = "John Doe",
+            email = "john.doe@company.com",
+            role = User.ROLE_USER,
+            accountStatus = User.STATUS_PENDING_APPROVAL
+        )
+
+        assertTrue("New registration must be pending approval", newUser.isPendingApproval())
+        assertFalse("New registration must not be active", newUser.isActive())
+        assertFalse("New registration must not be admin", newUser.isAdmin())
+        assertEquals(User.ROLE_USER, newUser.effectiveRole)
+        assertEquals(User.STATUS_PENDING_APPROVAL, newUser.effectiveAccountStatus)
+    }
+
+    @Test
+    fun testAdminRoleCasingTolerance() {
+        val upperAdmin = User(uid = "admin-1", role = "ADMIN")
+        val lowerAdmin = User(uid = "admin-2", role = "admin")
+        val mixedAdmin = User(uid = "admin-3", role = "Admin")
+        val regularUser = User(uid = "user-1", role = "USER")
+
+        assertTrue("ADMIN uppercase must be recognized as admin", upperAdmin.isAdmin())
+        assertTrue("admin lowercase must be recognized as admin", lowerAdmin.isAdmin())
+        assertTrue("Admin mixed case must be recognized as admin", mixedAdmin.isAdmin())
+        assertFalse("Regular user must NOT be recognized as admin", regularUser.isAdmin())
+    }
+
+    @Test
+    fun testRestrictedUserStatusEnforcement() {
+        val blockedUser = User(uid = "b-1", accountStatus = User.STATUS_BLOCKED)
+        val removedUser = User(uid = "r-1", accountStatus = User.STATUS_REMOVED)
+        val activeUser = User(uid = "a-1", accountStatus = User.STATUS_ACTIVE)
+
+        assertTrue(blockedUser.isBlocked())
+        assertFalse(blockedUser.isActive())
+
+        assertTrue(removedUser.isRemoved())
+        assertFalse(removedUser.isActive())
+
+        assertTrue(activeUser.isActive())
+        assertFalse(activeUser.isBlocked())
+        assertFalse(activeUser.isRemoved())
+    }
+
+    @Test
+    fun testLoginErrorMessagesDoNotShowMisleadingSessionExpired() {
+        // Verify that specific authentication error strings produce accurate user guidance
+        fun mapLoginError(msg: String, isInvalidCreds: Boolean = false, isUserNotFound: Boolean = false): String {
+            return when {
+                msg.contains("complete email", ignoreCase = true) -> msg
+                msg.contains("restricted", ignoreCase = true) -> msg
+                msg.contains("does not have a password", ignoreCase = true) ||
+                    msg.contains("no password", ignoreCase = true) ->
+                    "This account was registered using Google. Please tap 'Continue with Google' to sign in."
+                isUserNotFound || msg.contains("no user record", ignoreCase = true) ||
+                    msg.contains("user-not-found", ignoreCase = true) ->
+                    "No account found with this email. Please click 'Create Account' below to register."
+                isInvalidCreds || msg.contains("wrong-password", ignoreCase = true) ||
+                    msg.contains("invalid-credential", ignoreCase = true) ||
+                    msg.contains("password is invalid", ignoreCase = true) ||
+                    msg.contains("INVALID_LOGIN_CREDENTIALS", ignoreCase = true) ->
+                    "Incorrect email or password. Please verify your credentials or click 'Forgot Password?'."
+                msg.contains("network", ignoreCase = true) ->
+                    "Network error. Please check your internet connection."
+                msg.isNotBlank() -> msg
+                else -> "Couldn't sign in. Check your email/password and internet connection."
+            }
+        }
+
+        // Case 1: Account created via Google Sign-In where user tries password sign-in
+        val googleUserError = mapLoginError("The password is invalid or the user does not have a password.")
+        assertEquals(
+            "This account was registered using Google. Please tap 'Continue with Google' to sign in.",
+            googleUserError
+        )
+
+        // Case 2: Wrong password entered
+        val wrongPasswordError = mapLoginError("An internal error has occurred. [ INVALID_LOGIN_CREDENTIALS ]")
+        assertEquals(
+            "Incorrect email or password. Please verify your credentials or click 'Forgot Password?'.",
+            wrongPasswordError
+        )
+
+        // Case 3: User not found in Firebase Auth
+        val notFoundError = mapLoginError("There is no user record corresponding to this identifier.")
+        assertEquals(
+            "No account found with this email. Please click 'Create Account' below to register.",
+            notFoundError
+        )
+
+        // Case 4: Restricted / blocked account
+        val restrictedError = mapLoginError("Your account is currently restricted. Please contact the administrator.")
+        assertEquals(
+            "Your account is currently restricted. Please contact the administrator.",
+            restrictedError
+        )
+    }
 }

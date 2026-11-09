@@ -438,6 +438,8 @@ class AuthRepository(
         }.getOrDefault(mapOf("name" to "Administrator", "email" to ""))
     }
 
+    fun getCurrentFirebaseUser(): com.google.firebase.auth.FirebaseUser? = auth.currentUser
+
     fun signOut() {
         auth.signOut()
     }

@@ -43,6 +43,10 @@ fun CompleteProfileScreen(
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
+    val firebaseUser = remember { authRepository.getCurrentFirebaseUser() }
+    val effectiveName = userDraft.name.ifBlank { firebaseUser?.displayName.orEmpty() }.ifBlank { "Colleague" }
+    val effectiveEmail = userDraft.email.ifBlank { firebaseUser?.email.orEmpty() }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -58,7 +62,7 @@ fun CompleteProfileScreen(
             Spacer(modifier = Modifier.height(20.dp))
 
             Text("Complete Profile", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-            Text("Welcome ${userDraft.name}! Enter your employee details to continue.", fontSize = 14.5.sp, color = TextSecondary)
+            Text("Welcome $effectiveName! Enter your employee details to continue.", fontSize = 14.5.sp, color = TextSecondary)
 
             Spacer(modifier = Modifier.height(20.dp))
 
@@ -73,7 +77,7 @@ fun CompleteProfileScreen(
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     OutlinedTextField(
-                        value = userDraft.email,
+                        value = effectiveEmail,
                         onValueChange = {},
                         enabled = false,
                         label = { Text("Email (Google)") },

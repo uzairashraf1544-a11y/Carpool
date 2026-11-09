@@ -34,6 +34,9 @@ import com.example.data.model.User
 import com.example.data.repository.AuthRepository
 import com.example.ui.components.ErrorContainer
 import com.example.ui.theme.*
+import com.google.firebase.auth.FirebaseAuthException
+import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
+import com.google.firebase.auth.FirebaseAuthInvalidUserException
 import com.google.firebase.auth.GoogleAuthProvider
 import kotlinx.coroutines.launch
 
@@ -243,14 +246,37 @@ fun LoginScreen(
                                     }
                                 }.onFailure { err ->
                                     val msg = err.message.orEmpty()
+                                    val authCode = (err as? FirebaseAuthException)?.errorCode.orEmpty()
                                     errorMessage = when {
                                         msg.contains("complete email", ignoreCase = true) -> msg
                                         msg.contains("restricted", ignoreCase = true) -> msg
-                                        msg.contains("no user record", ignoreCase = true) || msg.contains("user-not-found", ignoreCase = true) ->
+                                        msg.contains("does not have a password", ignoreCase = true) ||
+                                            msg.contains("no password", ignoreCase = true) ->
+                                            "This account was registered using Google. Please tap 'Continue with Google' to sign in."
+                                        err is FirebaseAuthInvalidUserException ||
+                                            authCode == "ERROR_USER_NOT_FOUND" ||
+                                            msg.contains("no user record", ignoreCase = true) ||
+                                            msg.contains("user-not-found", ignoreCase = true) ->
                                             "No account found with this email. Please click 'Create Account' below to register."
-                                        msg.contains("wrong-password", ignoreCase = true) || msg.contains("invalid-credential", ignoreCase = true) ->
+                                        err is FirebaseAuthInvalidCredentialsException ||
+                                            authCode == "ERROR_WRONG_PASSWORD" ||
+                                            authCode == "ERROR_INVALID_CREDENTIAL" ||
+                                            msg.contains("wrong-password", ignoreCase = true) ||
+                                            msg.contains("invalid-credential", ignoreCase = true) ||
+                                            msg.contains("password is invalid", ignoreCase = true) ||
+                                            msg.contains("INVALID_LOGIN_CREDENTIALS", ignoreCase = true) ->
                                             "Incorrect email or password. Please verify your credentials or click 'Forgot Password?'."
-                                        msg.contains("network", ignoreCase = true) ->
+                                        authCode == "ERROR_INVALID_EMAIL" ||
+                                            msg.contains("badly formatted", ignoreCase = true) ->
+                                            "Please enter a valid email address."
+                                        authCode == "ERROR_USER_DISABLED" ||
+                                            msg.contains("user-disabled", ignoreCase = true) ->
+                                            "This account has been disabled. Please contact the administrator."
+                                        authCode == "ERROR_TOO_MANY_REQUESTS" ||
+                                            msg.contains("too-many-requests", ignoreCase = true) ||
+                                            msg.contains("unusual activity", ignoreCase = true) ->
+                                            "Too many failed login attempts. Please wait a moment and try again or reset your password."
+                                        msg.contains("network", ignoreCase = true) || msg.contains("unavailable", ignoreCase = true) ->
                                             "Network error. Please check your internet connection."
                                         msg.isNotBlank() -> msg
                                         else -> "Couldn't sign in. Check your email/password and internet connection."

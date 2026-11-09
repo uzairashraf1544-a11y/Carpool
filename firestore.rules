@@ -39,7 +39,9 @@ service cloud.firestore {
     function validRole(role) {
       return role in [
         'USER',
-        'ADMIN'
+        'ADMIN',
+        'user',
+        'admin'
       ];
     }
 
@@ -48,15 +50,20 @@ service cloud.firestore {
         'ACTIVE',
         'PENDING_APPROVAL',
         'BLOCKED',
-        'REMOVED'
+        'REMOVED',
+        'active',
+        'pending_approval',
+        'blocked',
+        'removed'
       ];
     }
 
     function isActiveUser() {
       return currentUserExists()
         && (
-          currentUser().data.get('accountStatus', 'ACTIVE') == 'ACTIVE'
-          || currentUser().data.get('role', 'USER') == 'ADMIN'
+          currentUser().data.get('accountStatus', 'ACTIVE') in ['ACTIVE', 'active', 'Active']
+          || currentUser().data.get('role', 'USER') in ['ADMIN', 'admin', 'Admin']
+          || currentUser().data.get('isAdmin', false) == true
         );
     }
 
@@ -170,11 +177,11 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.auth.uid == userId
         && (
-          request.resource.data.get('role', 'USER') in ['USER', 'ADMIN']
+          request.resource.data.get('role', 'USER') in ['USER', 'ADMIN', 'user', 'admin']
         )
         && (
           !('accountStatus' in request.resource.data)
-          || request.resource.data.get('accountStatus', 'PENDING_APPROVAL') in ['PENDING_APPROVAL', 'ACTIVE']
+          || request.resource.data.get('accountStatus', 'PENDING_APPROVAL') in ['PENDING_APPROVAL', 'ACTIVE', 'pending_approval', 'active']
         );
 
       // User updates their own profile, or Admin manages account
@@ -185,14 +192,14 @@ service cloud.firestore {
             request.auth.uid == userId
             // Cannot self-promote to ADMIN unless already ADMIN or admin is updating
             && (
-              request.resource.data.get('role', 'USER') == resource.data.get('role', 'USER')
-              || resource.data.get('role', 'USER') == 'ADMIN'
-              || isAdmin()
+              isAdmin()
+              || !(request.resource.data.get('role', 'USER') in ['ADMIN', 'admin'])
+              || resource.data.get('role', 'USER') in ['ADMIN', 'admin']
             )
             // Cannot unblock themselves if blocked or removed
             && (
               isAdmin()
-              || resource.data.get('accountStatus', 'PENDING_APPROVAL') in ['PENDING_APPROVAL', 'ACTIVE']
+              || resource.data.get('accountStatus', 'PENDING_APPROVAL') in ['PENDING_APPROVAL', 'ACTIVE', 'pending_approval', 'active']
               || request.resource.data.get('accountStatus', 'PENDING_APPROVAL') == resource.data.get('accountStatus', 'PENDING_APPROVAL')
             )
           )

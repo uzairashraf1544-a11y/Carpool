@@ -22,13 +22,15 @@ fun ErrorContainer(
     modifier: Modifier = Modifier
 ) {
     val friendlyMessage = when {
-        message.contains("PERMISSION_DENIED", ignoreCase = true) || message.contains("permissions", ignoreCase = true) -> {
+        message.contains("PERMISSION_DENIED", ignoreCase = true) || message.contains("permission-denied", ignoreCase = true) -> {
             "We couldn't update your information. Please check your details and try again."
         }
         message.contains("network", ignoreCase = true) || message.contains("unavailable", ignoreCase = true) -> {
             "No internet connection. Check your connection and try again."
         }
-        message.contains("expired", ignoreCase = true) || message.contains("auth", ignoreCase = true) -> {
+        message.contains("session has expired", ignoreCase = true) ||
+        message.contains("session_expired", ignoreCase = true) ||
+        message.contains("token_expired", ignoreCase = true) -> {
             "Your session has expired. Please sign in again."
         }
         message.isNotBlank() -> message
