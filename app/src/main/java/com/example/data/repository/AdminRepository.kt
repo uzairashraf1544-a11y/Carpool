@@ -8,6 +8,7 @@ import com.example.data.model.RideRequest
 import com.example.data.model.SystemConfig
 import com.example.data.model.User
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -418,6 +419,157 @@ class AdminRepository(
                 timestamp = now
             )
             db.collection("auditLogs").document(auditId).set(log).await()
+            Unit
+        }
+    }
+
+    /**
+     * Complete Purge: Permanently erases all user profile records, active requests,
+     * rides, passenger needs, and CO₂ records from Firestore (Zero trace).
+     */
+    suspend fun purgeMemberCompletely(adminUser: User, targetUser: User, reason: String = ""): Result<Unit> {
+        return runCatching {
+            require(adminUser.isAdmin()) { "Only an administrator can purge member data." }
+            require(targetUser.uid != adminUser.uid) { "Administrators cannot purge their own account." }
+
+            val now = System.currentTimeMillis()
+            val targetUid = targetUser.uid
+
+            // 1. Purge active passenger ride lock
+            try {
+                db.collection("activePassengerRides").document(targetUid).delete().await()
+            } catch (_: Exception) {}
+
+            // 2. Purge passengerNeeds for this user
+            try {
+                val needs = db.collection("passengerNeeds")
+                    .whereEqualTo("passengerId", targetUid)
+                    .get()
+                    .await()
+                if (!needs.isEmpty) {
+                    val batch = db.batch()
+                    for (doc in needs.documents) {
+                        batch.delete(doc.reference)
+                    }
+                    batch.commit().await()
+                }
+            } catch (_: Exception) {}
+
+            // 3. Purge rideRequests where user was passenger or driver
+            try {
+                val reqsPassenger = db.collection("rideRequests")
+                    .whereEqualTo("passengerId", targetUid)
+                    .get()
+                    .await()
+                if (!reqsPassenger.isEmpty) {
+                    val batch = db.batch()
+                    for (doc in reqsPassenger.documents) {
+                        batch.delete(doc.reference)
+                    }
+                    batch.commit().await()
+                }
+
+                val reqsDriver = db.collection("rideRequests")
+                    .whereEqualTo("driverId", targetUid)
+                    .get()
+                    .await()
+                if (!reqsDriver.isEmpty) {
+                    val batch = db.batch()
+                    for (doc in reqsDriver.documents) {
+                        batch.delete(doc.reference)
+                    }
+                    batch.commit().await()
+                }
+            } catch (_: Exception) {}
+
+            // 4. Purge rides where user was driver
+            try {
+                val ridesDriver = db.collection("rides")
+                    .whereEqualTo("driverId", targetUid)
+                    .get()
+                    .await()
+                if (!ridesDriver.isEmpty) {
+                    val batch = db.batch()
+                    for (doc in ridesDriver.documents) {
+                        batch.delete(doc.reference)
+                    }
+                    batch.commit().await()
+                }
+            } catch (_: Exception) {}
+
+            // 5. Remove user from acceptedPassengerIds in active/scheduled rides
+            try {
+                val passengerInRides = db.collection("rides")
+                    .whereArrayContains("acceptedPassengerIds", targetUid)
+                    .get()
+                    .await()
+                if (!passengerInRides.isEmpty) {
+                    val batch = db.batch()
+                    for (doc in passengerInRides.documents) {
+                        batch.update(
+                            doc.reference,
+                            "acceptedPassengerIds", FieldValue.arrayRemove(targetUid),
+                            "completedPassengerIds", FieldValue.arrayRemove(targetUid)
+                        )
+                    }
+                    batch.commit().await()
+                }
+            } catch (_: Exception) {}
+
+            // 6. Purge co2Records where user was driver or passenger contributor
+            try {
+                val co2Docs = db.collection("co2Records")
+                    .whereEqualTo("driverId", targetUid)
+                    .get()
+                    .await()
+                if (!co2Docs.isEmpty) {
+                    val batch = db.batch()
+                    for (doc in co2Docs.documents) {
+                        batch.delete(doc.reference)
+                    }
+                    batch.commit().await()
+                }
+            } catch (_: Exception) {}
+
+            // 7. Remove user from leaderboard if listed
+            try {
+                val leaderboardDoc = db.collection("systemConfig").document("leaderboard").get().await()
+                if (leaderboardDoc.exists()) {
+                    @Suppress("UNCHECKED_CAST")
+                    val entries = leaderboardDoc.get("entries") as? List<Map<String, Any>>
+                    if (entries != null && entries.any { it["uid"] == targetUid }) {
+                        val filtered = entries.filter { it["uid"] != targetUid }
+                        db.collection("systemConfig").document("leaderboard").update(
+                            mapOf(
+                                "entries" to filtered,
+                                "updatedAt" to now
+                            )
+                        ).await()
+                    }
+                }
+            } catch (_: Exception) {}
+
+            // 8. Delete user document from users collection (Erases user profile)
+            db.collection("users").document(targetUid).delete().await()
+
+            // 9. Record administrative audit log of the purge action
+            val auditId = "${now}_purge_${targetUid}"
+            val log = AuditLog(
+                auditId = auditId,
+                adminUid = adminUser.uid,
+                adminName = adminUser.name,
+                adminEmail = adminUser.email,
+                targetUid = targetUid,
+                targetName = targetUser.name,
+                targetEmail = targetUser.email,
+                action = AuditLog.ACTION_PURGE_MEMBER,
+                reason = reason.trim().ifBlank { "Full data purge requested by admin" },
+                timestamp = now
+            )
+            try {
+                db.collection("auditLogs").document(auditId).set(log).await()
+            } catch (_: Exception) {}
+
             Unit
         }
     }

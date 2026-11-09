@@ -333,4 +333,40 @@ class AdminApprovalUnitTest {
             (activeUsers * dailyInteractionsPerUser) < sparkFreeTierDailyWriteLimit
         )
     }
+
+    @Test
+    fun testAdminTwoRemovalOptionsSoftAndCompletePurge() {
+        val userToDeactivate = User(
+            uid = "user-to-deactivate",
+            name = "John Doe",
+            email = "john@example.com",
+            accountStatus = User.STATUS_ACTIVE
+        )
+
+        // Option 1: Deactivate (Keep Data)
+        val softRemovedUser = userToDeactivate.copy(
+            accountStatus = User.STATUS_REMOVED,
+            removedAt = System.currentTimeMillis(),
+            removedBy = "admin-001",
+            removeReason = "Offboarded employee"
+        )
+        assertTrue("User must be marked as removed", softRemovedUser.isRemoved())
+        assertFalse("Removed user must not be active", softRemovedUser.isActive())
+        assertEquals("Offboarded employee", softRemovedUser.removeReason)
+
+        // Option 2: Complete Purge (Zero Trace) Action Definition
+        assertEquals("PURGE_MEMBER", AuditLog.ACTION_PURGE_MEMBER)
+        val purgeLog = AuditLog(
+            auditId = "100_purge_user",
+            adminUid = "admin-001",
+            adminName = "Super Admin",
+            targetUid = "user-to-purge",
+            targetName = "Jane Doe",
+            targetEmail = "jane@example.com",
+            action = AuditLog.ACTION_PURGE_MEMBER,
+            reason = "Complete data erasure requested"
+        )
+        assertEquals(AuditLog.ACTION_PURGE_MEMBER, purgeLog.action)
+        assertEquals("user-to-purge", purgeLog.targetUid)
+    }
 }

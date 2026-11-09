@@ -16,6 +16,7 @@ data class AuditLog(
         const val ACTION_BLOCK_MEMBER = "BLOCK_MEMBER"
         const val ACTION_UNBLOCK_MEMBER = "UNBLOCK_MEMBER"
         const val ACTION_REMOVE_MEMBER = "REMOVE_MEMBER"
+        const val ACTION_PURGE_MEMBER = "PURGE_MEMBER"
         const val ACTION_ROLE_CHANGE = "ROLE_CHANGE"
         const val ACTION_APPROVE_USER = "APPROVE_USER"
     }

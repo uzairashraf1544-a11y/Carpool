@@ -1,6 +1,7 @@
 package com.example.ui.screens.admin
 
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -90,6 +91,8 @@ fun AdminDashboardScreen(
     var memberActionType by remember { mutableStateOf<String?>(null) } // "BLOCK", "UNBLOCK", "REMOVE", "ROLE"
     var actionReason by remember { mutableStateOf("") }
     var promoteTargetRole by remember { mutableStateOf(true) }
+    var purgeCompletely by remember { mutableStateOf(false) }
+    var isExecutingAction by remember { mutableStateOf(false) }
 
     // Sustainability settings
     var baselineText by remember { mutableStateOf(config.baselineDistanceKm.toString()) }
@@ -367,41 +370,218 @@ fun AdminDashboardScreen(
 
             "REMOVE" -> {
                 AlertDialog(
-                    onDismissRequest = { targetMemberAction = null },
-                    title = { Text("Remove ${target.name}?", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error) },
+                    onDismissRequest = {
+                        if (!isExecutingAction) {
+                            targetMemberAction = null
+                            actionReason = ""
+                            purgeCompletely = false
+                        }
+                    },
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = if (purgeCompletely) Icons.Rounded.DeleteForever else Icons.Rounded.PersonOff,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = if (purgeCompletely) "Permanently Purge Member" else "Remove Member",
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    },
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("The account will no longer be active.")
-                            Text("Historical ride and CO₂ records will be preserved.", fontSize = 13.sp, color = TextSecondary)
+                            // Member Summary Banner
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(target.name.ifBlank { "Unknown Member" }, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
+                                    Text("${target.department} • ${target.email.ifBlank { target.employeeId }}", fontSize = 12.sp, color = TextSecondary)
+                                }
+                            }
+
+                            Text("Select removal option:", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+
+                            // Option 1: Deactivate (Keep Data)
+                            Card(
+                                onClick = { if (!isExecutingAction) purgeCompletely = false },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (!purgeCompletely) Primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surface
+                                ),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (!purgeCompletely) Primary else Outline.copy(alpha = 0.4f)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    RadioButton(
+                                        selected = !purgeCompletely,
+                                        onClick = { if (!isExecutingAction) purgeCompletely = false },
+                                        colors = RadioButtonDefaults.colors(selectedColor = Primary)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text("Deactivate Account", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TextPrimary)
+                                            Spacer(Modifier.width(6.dp))
+                                            Surface(
+                                                color = Primary.copy(alpha = 0.15f),
+                                                shape = RoundedCornerShape(4.dp)
+                                            ) {
+                                                Text("Keep Data", fontSize = 10.sp, color = PrimaryDark, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                                            }
+                                        }
+                                        Text(
+                                            "Revokes app login immediately. Keeps past commute records, shared rides, and CO₂ stats intact for reporting.",
+                                            fontSize = 11.5.sp,
+                                            color = TextSecondary,
+                                            lineHeight = 15.sp
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Option 2: Complete Purge (Zero Trace)
+                            Card(
+                                onClick = { if (!isExecutingAction) purgeCompletely = true },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (purgeCompletely) MaterialTheme.colorScheme.error.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface
+                                ),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (purgeCompletely) MaterialTheme.colorScheme.error else Outline.copy(alpha = 0.4f)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    RadioButton(
+                                        selected = purgeCompletely,
+                                        onClick = { if (!isExecutingAction) purgeCompletely = true },
+                                        colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.error)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text("Complete Purge", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
+                                            Spacer(Modifier.width(6.dp))
+                                            Surface(
+                                                color = MaterialTheme.colorScheme.error.copy(alpha = 0.15f),
+                                                shape = RoundedCornerShape(4.dp)
+                                            ) {
+                                                Text("Zero Trace", fontSize = 10.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                                            }
+                                        }
+                                        Text(
+                                            "Permanently deletes user profile, ride requests, vehicle listings, and personal CO₂ records from Firestore. Irreversible.",
+                                            fontSize = 11.5.sp,
+                                            color = TextSecondary,
+                                            lineHeight = 15.sp
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (purgeCompletely) {
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.12f)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Rounded.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Warning: Every trace of this user in Firestore will be erased.", fontSize = 11.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium)
+                                    }
+                                }
+                            }
+
                             OutlinedTextField(
                                 value = actionReason,
                                 onValueChange = { actionReason = it },
                                 label = { Text("Reason for removal (optional)") },
-                                placeholder = { Text("e.g. Employee offboarded") },
+                                placeholder = { Text(if (purgeCompletely) "e.g. Test cleanup / user requested complete erasure" else "e.g. Employee offboarded") },
+                                singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
+
+                            if (isExecutingAction) {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(top = 4.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(if (purgeCompletely) "Purging all Firestore records..." else "Deactivating member...", fontSize = 12.sp, color = TextSecondary)
+                                }
+                            }
                         }
                     },
                     confirmButton = {
                         Button(
+                            enabled = !isExecutingAction,
                             onClick = {
                                 val reason = actionReason
                                 val member = target
-                                targetMemberAction = null
-                                actionReason = ""
+                                val isPurge = purgeCompletely
+                                isExecutingAction = true
                                 scope.launch {
-                                    adminRepository.removeMember(user, member, reason)
-                                        .onSuccess { statusMessage = "${member.name} has been removed." }
-                                        .onFailure { statusMessage = it.message ?: "Failed to remove member." }
+                                    val result = if (isPurge) {
+                                        adminRepository.purgeMemberCompletely(user, member, reason)
+                                    } else {
+                                        adminRepository.removeMember(user, member, reason)
+                                    }
+                                    isExecutingAction = false
+                                    targetMemberAction = null
+                                    actionReason = ""
+                                    purgeCompletely = false
+                                    result.onSuccess {
+                                        statusMessage = if (isPurge) {
+                                            "${member.name} and all data have been purged."
+                                        } else {
+                                            "${member.name} has been deactivated."
+                                        }
+                                        Toast.makeText(context, statusMessage, Toast.LENGTH_SHORT).show()
+                                    }.onFailure {
+                                        statusMessage = it.message ?: "Failed to remove member."
+                                        Toast.makeText(context, statusMessage, Toast.LENGTH_LONG).show()
+                                    }
                                 }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (purgeCompletely) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.error.copy(alpha = 0.85f)
+                            )
                         ) {
-                            Text("Confirm Remove")
+                            Text(if (purgeCompletely) "Purge All Data" else "Deactivate Member")
                         }
                     },
                     dismissButton = {
-                        TextButton(onClick = { targetMemberAction = null }) { Text("Cancel") }
+                        TextButton(
+                            enabled = !isExecutingAction,
+                            onClick = {
+                                targetMemberAction = null
+                                actionReason = ""
+                                purgeCompletely = false
+                            }
+                        ) {
+                            Text("Cancel")
+                        }
                     }
                 )
             }
@@ -1090,7 +1270,8 @@ fun AdminDashboardScreen(
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Text(log.action.replace("_", " "), fontWeight = FontWeight.Bold, fontSize = 13.sp, color = PrimaryDark)
+                                            val actionColor = if (log.action.contains("PURGE")) MaterialTheme.colorScheme.error else PrimaryDark
+                                            Text(log.action.replace("_", " "), fontWeight = FontWeight.Bold, fontSize = 13.sp, color = actionColor)
                                             Text(sdf.format(Date(log.timestamp)), fontSize = 11.5.sp, color = TextTertiary)
                                         }
                                         Text("Target: ${log.targetName} (${log.targetEmail.ifBlank { log.targetUid }})", fontSize = 13.sp, color = TextPrimary)
