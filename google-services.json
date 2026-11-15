@@ -30,6 +30,14 @@
           }
         },
         {
+          "client_id": "462593078430-lgjv1mjqrih02bske0rrj1ss5pbhm6el.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aistudio.carpool.kjqxcv",
+            "certificate_hash": "c049a00cf8a4778f1c6b92a97792b90dab144df0"
+          }
+        },
+        {
           "client_id": "462593078430-egd4i0jhcbpqdssrtggmfnp4v1nmo1kr.apps.googleusercontent.com",
           "client_type": 3
         }

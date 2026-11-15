@@ -25,6 +25,13 @@ SHA-1 Fingerprint:
 SHA-256 Fingerprint:
 22:E6:74:03:42:77:2C:A1:48:9B:57:4C:FC:58:BF:86:68:63:6B:15:E4:73:AA:0C:D8:1F:8A:F2:3F:95:D9:3F
 
+C. GOOGLE PLAY STORE APP SIGNING KEY (Active for all Play Store installed builds):
+SHA-1 Fingerprint:
+C0:49:A0:0C:F8:A4:77:8F:1C:6B:92:A9:77:92:B9:0D:AB:14:4D:F0
+
+SHA-256 Fingerprint:
+F8:DA:C0:34:40:95:3A:40:AD:A5:A5:46:EE:8E:A0:E2:EE:D3:35:34:72:C5:61:C6:42:94:FB:45:E6:F2:C3:4B
+
 --------------------------------------------------------------------------------
 2. HOW TO ADD THIS TO FIREBASE CONSOLE (CRITICAL STEP):
 --------------------------------------------------------------------------------
