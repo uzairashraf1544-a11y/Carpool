@@ -30,6 +30,56 @@ object FirestoreReadMeter {
     private val lastQuotaExhaustedTimestamp = AtomicLong(0L)
     const val MIN_BACKOFF_MS = 5 * 60 * 1000L // 5 minutes backoff
 
+    // Sliding Window Circuit Breaker (Quota Runaway Safeguard)
+    const val MAX_READS_PER_MINUTE = 200
+    const val CIRCUIT_BREAKER_COOLOFF_MS = 60 * 1000L // 1 minute cooloff
+
+    @Volatile
+    var isCircuitBreakerTripped: Boolean = false
+        private set
+
+    private val circuitBreakerTrippedAt = AtomicLong(0L)
+    private val recentServerReads = java.util.concurrent.ConcurrentLinkedQueue<Pair<Long, Int>>()
+
+    var circuitBreakerNotifier: ((readsCount: Int) -> Unit)? = null
+
+    private fun checkAndTripCircuitBreaker(newReads: Int) {
+        val now = System.currentTimeMillis()
+        recentServerReads.add(Pair(now, newReads))
+
+        // Prune entries older than 60 seconds
+        val cutoff = now - 60_000L
+        while (recentServerReads.isNotEmpty() && (recentServerReads.peek()?.first ?: 0L) < cutoff) {
+            recentServerReads.poll()
+        }
+
+        val windowTotal = recentServerReads.sumOf { it.second }
+        if (windowTotal >= MAX_READS_PER_MINUTE) {
+            isCircuitBreakerTripped = true
+            circuitBreakerTrippedAt.set(now)
+            Log.e(TAG, "CIRCUIT_BREAKER_TRIPPED | reads=$windowTotal in 60s (threshold=$MAX_READS_PER_MINUTE). Throttling background queries.")
+            circuitBreakerNotifier?.invoke(windowTotal)
+        }
+    }
+
+    fun isThrottled(): Boolean {
+        if (isQuotaExhausted) return true
+        if (!isCircuitBreakerTripped) return false
+
+        val elapsed = System.currentTimeMillis() - circuitBreakerTrippedAt.get()
+        if (elapsed >= CIRCUIT_BREAKER_COOLOFF_MS) {
+            isCircuitBreakerTripped = false
+            recentServerReads.clear()
+            Log.i(TAG, "CIRCUIT_BREAKER_RESET | Cooloff period elapsed, normal operation resumed.")
+            return false
+        }
+        return true
+    }
+
+    fun shouldAllowBackgroundQuery(): Boolean {
+        return !isThrottled()
+    }
+
     fun recordListenerStart(path: String) {
         listenerStartsByPath.computeIfAbsent(path) { AtomicInteger(0) }.incrementAndGet()
         Log.d(TAG, "LISTENER_START | path=$path | totalStarts=${listenerStartsByPath[path]?.get()}")
@@ -48,6 +98,7 @@ object FirestoreReadMeter {
                 snapshot.size()
             }
             serverReadsByPath.computeIfAbsent(path) { AtomicInteger(0) }.addAndGet(changesCount)
+            checkAndTripCircuitBreaker(changesCount)
             Log.d(TAG, "SERVER_READ_QUERY | path=$path | docs=$changesCount | isFromCache=false")
         }
     }
@@ -58,6 +109,7 @@ object FirestoreReadMeter {
             cacheReadsByPath.computeIfAbsent(path) { AtomicInteger(0) }.incrementAndGet()
         } else {
             serverReadsByPath.computeIfAbsent(path) { AtomicInteger(0) }.incrementAndGet()
+            checkAndTripCircuitBreaker(1)
             Log.d(TAG, "SERVER_READ_DOC | path=$path | docs=1 | isFromCache=false")
         }
     }

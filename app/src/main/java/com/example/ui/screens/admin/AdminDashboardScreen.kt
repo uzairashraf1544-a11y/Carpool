@@ -97,12 +97,42 @@ fun AdminDashboardScreen(
     val users = membersList
 
     // Stream today's operations ONLY when on Overview tab (0) and enabled via RemoteConfig
-    val todayRides by remember(selectedTab, today) {
-        if (selectedTab == 0 && RemoteConfigDefaults.adminLiveOverviewEnabled) adminRepository.getTodayRidesFlow(today) else flowOf(emptyList())
+    var isOverviewLivePaused by remember { mutableStateOf(false) }
+    var lastOverviewInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var preservedTodayRides by remember { mutableStateOf<List<Ride>>(emptyList()) }
+    var preservedTodayRequests by remember { mutableStateOf<List<RideRequest>>(emptyList()) }
+
+    LaunchedEffect(selectedTab, isOverviewLivePaused) {
+        if (selectedTab == 0 && !isOverviewLivePaused) {
+            while (true) {
+                kotlinx.coroutines.delay(30_000L)
+                if (System.currentTimeMillis() - lastOverviewInteractionTime >= 5 * 60 * 1000L) {
+                    isOverviewLivePaused = true
+                    break
+                }
+            }
+        }
+    }
+
+    val todayRides by remember(selectedTab, today, isOverviewLivePaused) {
+        if (selectedTab == 0 && RemoteConfigDefaults.adminLiveOverviewEnabled && !isOverviewLivePaused) {
+            adminRepository.getTodayRidesFlow(today)
+        } else flowOf(emptyList())
     }.collectAsState(initial = emptyList())
-    val todayRequests by remember(selectedTab, today) {
-        if (selectedTab == 0 && RemoteConfigDefaults.adminLiveOverviewEnabled) adminRepository.getTodayRequestsFlow(today) else flowOf(emptyList())
+    val todayRequests by remember(selectedTab, today, isOverviewLivePaused) {
+        if (selectedTab == 0 && RemoteConfigDefaults.adminLiveOverviewEnabled && !isOverviewLivePaused) {
+            adminRepository.getTodayRequestsFlow(today)
+        } else flowOf(emptyList())
     }.collectAsState(initial = emptyList())
+
+    LaunchedEffect(todayRides) {
+        if (todayRides.isNotEmpty()) preservedTodayRides = todayRides
+    }
+    LaunchedEffect(todayRequests) {
+        if (todayRequests.isNotEmpty()) preservedTodayRequests = todayRequests
+    }
+    val activeRidesList = if (todayRides.isNotEmpty()) todayRides else preservedTodayRides
+    val activeRequestsList = if (todayRequests.isNotEmpty()) todayRequests else preservedTodayRequests
 
     // Only stream audit logs when the admin actually views the Audit Logs tab (index 5)
     val auditLogs by remember(selectedTab) {
@@ -221,13 +251,13 @@ fun AdminDashboardScreen(
         cachedReportRows.count { it.ridesAsDriver > 0 || it.ridesAsPassenger > 0 }
     }
 
-    val todayAvailableDrivers = todayRides.count {
+    val todayAvailableDrivers = activeRidesList.count {
         it.date == today && it.status in listOf(Ride.STATUS_AVAILABLE, Ride.STATUS_PARTIALLY_FULL)
     }
-    val todayPendingRequests = todayRequests.count { it.date == today && it.status == RideRequest.STATUS_REQUESTED }
-    val todayActiveRides = todayRides.count { it.date == today && it.status in listOf(Ride.STATUS_PARTIALLY_FULL, Ride.STATUS_FULL, Ride.STATUS_RIDE_STARTED) }
-    val todayCompletedRides = todayRides.count { it.date == today && it.status == Ride.STATUS_COMPLETED }
-    val todayCancelledRides = todayRides.count { it.date == today && it.status == Ride.STATUS_CANCELLED }
+    val todayPendingRequests = activeRequestsList.count { it.date == today && it.status == RideRequest.STATUS_REQUESTED }
+    val todayActiveRides = activeRidesList.count { it.date == today && it.status in listOf(Ride.STATUS_PARTIALLY_FULL, Ride.STATUS_FULL, Ride.STATUS_RIDE_STARTED) }
+    val todayCompletedRides = activeRidesList.count { it.date == today && it.status == Ride.STATUS_COMPLETED }
+    val todayCancelledRides = activeRidesList.count { it.date == today && it.status == Ride.STATUS_CANCELLED }
 
     // Filtered Members for Member Management Tab
     val filteredMembers = remember(users, search, memberStatusFilter) {
@@ -1168,7 +1198,41 @@ fun AdminDashboardScreen(
                         }
 
                         Spacer(Modifier.height(22.dp))
-                        SectionTitle("TODAY'S OPERATIONS")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            SectionTitle("TODAY'S OPERATIONS")
+                            if (RemoteConfigDefaults.adminLiveOverviewEnabled) {
+                                if (isOverviewLivePaused) {
+                                    AssistChip(
+                                        onClick = {
+                                            isOverviewLivePaused = false
+                                            lastOverviewInteractionTime = System.currentTimeMillis()
+                                        },
+                                        label = { Text("Paused (Idle) • Resume", fontSize = 11.sp) },
+                                        leadingIcon = { Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp)) },
+                                        colors = AssistChipDefaults.assistChipColors(
+                                            containerColor = WarningContainer,
+                                            labelColor = Warning,
+                                            leadingIconContentColor = Warning
+                                        )
+                                    )
+                                } else {
+                                    AssistChip(
+                                        onClick = { isOverviewLivePaused = true },
+                                        label = { Text("Live", fontSize = 11.sp) },
+                                        leadingIcon = { Icon(Icons.Rounded.Pause, contentDescription = null, modifier = Modifier.size(14.dp)) },
+                                        colors = AssistChipDefaults.assistChipColors(
+                                            containerColor = SuccessContainer,
+                                            labelColor = Success,
+                                            leadingIconContentColor = Success
+                                        )
+                                    )
+                                }
+                            }
+                        }
                         InfoCard {
                             OperationalRow("Available Drivers", todayAvailableDrivers, Icons.Rounded.DirectionsCar)
                             OperationalRow("Pending Requests", todayPendingRequests, Icons.Rounded.PersonAddAlt1)

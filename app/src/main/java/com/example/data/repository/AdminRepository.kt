@@ -12,6 +12,7 @@ import com.example.util.FirestoreReadMeter
 import com.example.util.ManagementReportRow
 import com.example.util.RemoteConfigDefaults
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -988,50 +989,76 @@ class AdminRepository(
         require(adminUser.isAdmin()) { "Access denied. Administrator privileges are required." }
         val currentAdminUid = adminUser.uid
 
-        // 1. Fetch rides
-        val ridesSnap = db.collection("rides").get().await()
-        val allRides = ridesSnap.documents.mapNotNull { it.toObject(Ride::class.java) }
-        val affectedRides = if (removeAdminData) {
-            allRides
+        // 1. Calculate rides count via server aggregation (1 read per 1,000 docs)
+        val totalRidesCount = db.collection("rides").count().get(AggregateSource.SERVER).await().count
+        val affectedRidesCount = if (removeAdminData) {
+            totalRidesCount.toInt()
         } else {
-            allRides.filter { it.driverId != currentAdminUid }
+            val adminRidesCount = db.collection("rides")
+                .whereEqualTo("driverId", currentAdminUid)
+                .count()
+                .get(AggregateSource.SERVER)
+                .await()
+                .count
+            (totalRidesCount - adminRidesCount).toInt().coerceAtLeast(0)
         }
 
-        // 2. Fetch bookings / ride requests
-        val reqsSnap = db.collection("rideRequests").get().await()
-        val allReqs = reqsSnap.documents.mapNotNull { it.toObject(RideRequest::class.java) }
-        val affectedBookings = if (removeAdminData) {
-            allReqs
+        // 2. Calculate bookings count via server aggregation
+        val totalReqsCount = db.collection("rideRequests").count().get(AggregateSource.SERVER).await().count
+        val affectedBookingsCount = if (removeAdminData) {
+            totalReqsCount.toInt()
         } else {
-            allReqs.filter { it.passengerId != currentAdminUid && it.driverId != currentAdminUid }
+            val adminPassengerReqsCount = db.collection("rideRequests")
+                .whereEqualTo("passengerId", currentAdminUid)
+                .count()
+                .get(AggregateSource.SERVER)
+                .await()
+                .count
+            val adminDriverReqsCount = db.collection("rideRequests")
+                .whereEqualTo("driverId", currentAdminUid)
+                .count()
+                .get(AggregateSource.SERVER)
+                .await()
+                .count
+            (totalReqsCount - adminPassengerReqsCount - adminDriverReqsCount).toInt().coerceAtLeast(0)
         }
 
-        // 3. Fetch passenger needs
-        val needsSnap = db.collection("passengerNeeds").get().await()
-        val allNeeds = needsSnap.documents.mapNotNull { it.toObject(PassengerNeed::class.java) }
-        val affectedNeeds = if (removeAdminData) {
-            allNeeds
+        // 3. Calculate passenger needs count via server aggregation
+        val totalNeedsCount = db.collection("passengerNeeds").count().get(AggregateSource.SERVER).await().count
+        val affectedNeedsCount = if (removeAdminData) {
+            totalNeedsCount.toInt()
         } else {
-            allNeeds.filter { it.passengerId != currentAdminUid }
+            val adminNeedsCount = db.collection("passengerNeeds")
+                .whereEqualTo("passengerId", currentAdminUid)
+                .count()
+                .get(AggregateSource.SERVER)
+                .await()
+                .count
+            (totalNeedsCount - adminNeedsCount).toInt().coerceAtLeast(0)
         }
 
-        // 4. Calculate accounts to delete
-        val usersSnap = db.collection("users").get().await()
-        val allUsers = usersSnap.documents.mapNotNull { User.fromSnapshot(it) }
+        // 4. Calculate accounts to delete via server aggregation
+        val totalUsersCount = db.collection("users").count().get(AggregateSource.SERVER).await().count
         val affectedUsersCount = when (resetType) {
             GlobalResetType.RIDES_ONLY -> 0
             GlobalResetType.ALL_INCLUDING_USERS_EXCEPT_CURRENT_ADMIN -> {
-                allUsers.count { it.uid != currentAdminUid }
+                (totalUsersCount - 1).toInt().coerceAtLeast(0)
             }
             GlobalResetType.ALL_EXCEPT_ADMIN_ACCOUNTS -> {
-                allUsers.count { !it.isAdmin() && it.uid != currentAdminUid }
+                val adminUsersCount = db.collection("users")
+                    .whereEqualTo("role", User.ROLE_ADMIN)
+                    .count()
+                    .get(AggregateSource.SERVER)
+                    .await()
+                    .count
+                (totalUsersCount - adminUsersCount).toInt().coerceAtLeast(0)
             }
         }
 
         GlobalResetPreview(
-            ridesCount = affectedRides.size,
-            bookingsCount = affectedBookings.size,
-            passengerNeedsCount = affectedNeeds.size,
+            ridesCount = affectedRidesCount,
+            bookingsCount = affectedBookingsCount,
+            passengerNeedsCount = affectedNeedsCount,
             userAccountsCount = affectedUsersCount
         )
     }
@@ -1045,23 +1072,33 @@ class AdminRepository(
         require(targetUser.uid != adminUser.uid) { "Cannot delete your own administrator account." }
         val targetUid = targetUser.uid
 
-        // Rides given as driver
+        // Rides given as driver - fetch driver rides to accurately count anonymized vs unbooked
         val driverRidesSnap = db.collection("rides").whereEqualTo("driverId", targetUid).get().await()
         val driverRides = driverRidesSnap.documents.mapNotNull { it.toObject(Ride::class.java) }
         val anonymizedCount = driverRides.count { it.acceptedPassengerIds.isNotEmpty() || it.completedPassengerIds.isNotEmpty() }
 
-        // Bookings taken as passenger
-        val passengerReqsSnap = db.collection("rideRequests").whereEqualTo("passengerId", targetUid).get().await()
+        // Bookings taken as passenger (server aggregation count)
+        val passengerReqsCount = db.collection("rideRequests")
+            .whereEqualTo("passengerId", targetUid)
+            .count()
+            .get(AggregateSource.SERVER)
+            .await()
+            .count
 
-        // Needs posted as passenger
-        val needsSnap = db.collection("passengerNeeds").whereEqualTo("passengerId", targetUid).get().await()
+        // Needs posted as passenger (server aggregation count)
+        val needsCount = db.collection("passengerNeeds")
+            .whereEqualTo("passengerId", targetUid)
+            .count()
+            .get(AggregateSource.SERVER)
+            .await()
+            .count
 
         UserDataDeletionPreview(
             targetUid = targetUid,
             targetName = targetUser.name,
             ridesAsDriverCount = driverRides.size,
-            bookingsAsPassengerCount = passengerReqsSnap.size(),
-            passengerNeedsCount = needsSnap.size(),
+            bookingsAsPassengerCount = passengerReqsCount.toInt(),
+            passengerNeedsCount = needsCount.toInt(),
             ridesAnonymizedForPassengersCount = anonymizedCount,
             isAccountDeleted = deleteAccount
         )

@@ -465,6 +465,13 @@ class RideRepository(
 
         FirestoreReadMeter.recordListenerStart("rides/discovery")
 
+        if (FirestoreReadMeter.isThrottled()) {
+            Log.w(TAG, "Circuit breaker active on rides/discovery. Throttling listener start to protect quota.")
+            trySend(emptyList())
+            awaitClose { }
+            return@callbackFlow
+        }
+
         val reg = db.collection("rides")
             .whereEqualTo("date", date)
             .whereIn("status", listOf(Ride.STATUS_AVAILABLE, Ride.STATUS_PARTIALLY_FULL))
@@ -546,6 +553,13 @@ class RideRepository(
         val limit = RemoteConfigDefaults.discoveryInitialLimit
 
         FirestoreReadMeter.recordListenerStart("passengerNeeds/discovery")
+
+        if (FirestoreReadMeter.isThrottled()) {
+            Log.w(TAG, "Circuit breaker active on passengerNeeds/discovery. Throttling listener start to protect quota.")
+            trySend(emptyList())
+            awaitClose { }
+            return@callbackFlow
+        }
 
         val reg = db.collection("passengerNeeds")
             .whereEqualTo("date", date)

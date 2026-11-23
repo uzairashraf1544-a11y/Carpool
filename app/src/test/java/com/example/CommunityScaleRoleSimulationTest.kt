@@ -10,6 +10,7 @@ import com.example.data.model.SystemConfig
 import com.example.data.model.User
 import com.example.data.repository.GlobalResetType
 import com.example.data.repository.ManagementReportSummary
+import com.example.util.FirestoreReadMeter
 import com.example.util.ManagementReportRow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -775,6 +776,11 @@ class CommunityScaleRoleSimulationTest {
         // F11: Management report CSV single read
         val reportSummary = ManagementReportSummary(totalDriverRides = 95, totalMembers = 300)
         assertEquals("F11: Single pre-aggregated report summary", 95, reportSummary.totalDriverRides)
+
+        // F12: Circuit Breaker sliding window and throttling
+        assertFalse("Circuit breaker starts untripped", FirestoreReadMeter.isCircuitBreakerTripped)
+        assertFalse("Circuit breaker is not throttled initially", FirestoreReadMeter.isThrottled())
+        assertTrue("Circuit breaker allows background queries", FirestoreReadMeter.shouldAllowBackgroundQuery())
     }
 
     // ----------------------------------------------------
