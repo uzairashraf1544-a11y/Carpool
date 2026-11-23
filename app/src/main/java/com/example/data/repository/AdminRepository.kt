@@ -8,8 +8,11 @@ import com.example.data.model.Ride
 import com.example.data.model.RideRequest
 import com.example.data.model.SystemConfig
 import com.example.data.model.User
+import com.example.util.FirestoreReadMeter
 import com.example.util.ManagementReportRow
+import com.example.util.RemoteConfigDefaults
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.MetadataChanges
@@ -19,6 +22,7 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.tasks.await
 
@@ -26,16 +30,37 @@ class AdminRepository(
     private val auth: FirebaseAuth = FirebaseAuth.getInstance(),
     private val db: FirebaseFirestore = FirebaseFirestore.getInstance()
 ) {
-    fun getSystemConfigFlow(): Flow<SystemConfig> = callbackFlow {
-        val listener = db.collection("systemConfig").document("sustainability")
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    trySend(SystemConfig())
-                    return@addSnapshotListener
-                }
-                trySend(snapshot?.toObject(SystemConfig::class.java) ?: SystemConfig())
+    companion object {
+        private var cachedSystemConfig: SystemConfig? = null
+        private var cachedLeaderboard: List<LeaderboardEntry>? = null
+        private var lastLeaderboardFetchAt: Long = 0L
+    }
+
+    /**
+     * Cache-first single get() flow for systemConfig/sustainability.
+     * Changes almost never; costs 0 server reads when cached.
+     */
+    fun getSystemConfigFlow(): Flow<SystemConfig> = flow {
+        cachedSystemConfig?.let { emit(it) }
+        val config = try {
+            val snapshot = try {
+                db.collection("systemConfig").document("sustainability")
+                    .get(Source.CACHE)
+                    .await()
+            } catch (_: Exception) {
+                db.collection("systemConfig").document("sustainability")
+                    .get()
+                    .await()
             }
-        awaitClose { listener.remove() }
+            FirestoreReadMeter.recordDocumentSnapshot("systemConfig/sustainability", snapshot)
+            val parsed = snapshot?.toObject(SystemConfig::class.java) ?: SystemConfig()
+            cachedSystemConfig = parsed
+            parsed
+        } catch (e: Exception) {
+            FirestoreReadMeter.handleFirestoreError("systemConfig/sustainability", e)
+            cachedSystemConfig ?: SystemConfig()
+        }
+        emit(config)
     }.flowOn(Dispatchers.IO).distinctUntilChanged()
 
     suspend fun updateSustainabilityConfig(baselineKm: Double, co2Factor: Double): Result<Unit> {
@@ -51,42 +76,67 @@ class AdminRepository(
                     com.google.firebase.firestore.SetOptions.merge()
                 )
                 .await()
+            cachedSystemConfig = null // invalidate cache
+            FirestoreReadMeter.recordWrite("systemConfig/sustainability", 1)
             Unit
         }
     }
 
-    fun getTopCo2SaversFlow(): Flow<List<LeaderboardEntry>> = callbackFlow {
-        val listener = db.collection("systemConfig").document("leaderboard")
-            .addSnapshotListener { snapshot, error ->
-                if (error != null || snapshot == null || !snapshot.exists()) {
-                    trySend(emptyList())
-                    return@addSnapshotListener
-                }
-                @Suppress("UNCHECKED_CAST")
-                val rawList = snapshot.get("entries") as? List<Map<String, Any>>
-                if (rawList.isNullOrEmpty()) {
-                    trySend(emptyList())
-                } else {
-                    val entries = rawList.mapNotNull { map ->
-                        val co2 = (map["co2SavedKg"] as? Number)?.toDouble() ?: 0.0
-                        if (co2 > 0.0) {
-                            LeaderboardEntry(
-                                uid = map["uid"] as? String ?: "",
-                                name = map["name"] as? String ?: "Contributor",
-                                department = map["department"] as? String ?: "Operations",
-                                co2SavedKg = co2,
-                                rideCount = (map["rideCount"] as? Number)?.toInt() ?: 0,
-                                rank = (map["rank"] as? Number)?.toInt() ?: 1
-                            )
-                        } else null
-                    }.sortedByDescending { it.co2SavedKg }.take(3).mapIndexed { idx, item ->
-                        item.copy(rank = idx + 1)
-                    }
-                    trySend(entries)
-                }
+    /**
+     * Cache-first one-shot get() flow for systemConfig/leaderboard (Task T1).
+     * Replaces snapshot listener to eliminate fan-out reads to all active users.
+     * Enforces TTL (6h default, 24h safe mode).
+     */
+    fun getTopCo2SaversFlow(): Flow<List<LeaderboardEntry>> = flow {
+        val now = System.currentTimeMillis()
+        val ttlMs = RemoteConfigDefaults.leaderboardCacheHours * 3600 * 1000L
+        if (cachedLeaderboard != null && (now - lastLeaderboardFetchAt < ttlMs)) {
+            emit(cachedLeaderboard!!)
+            return@flow
+        }
+
+        val entries = try {
+            val snapshot = try {
+                db.collection("systemConfig").document("leaderboard")
+                    .get(Source.CACHE)
+                    .await()
+            } catch (_: Exception) {
+                db.collection("systemConfig").document("leaderboard")
+                    .get()
+                    .await()
             }
-        awaitClose { listener.remove() }
+            FirestoreReadMeter.recordDocumentSnapshot("systemConfig/leaderboard", snapshot)
+            parseLeaderboardEntries(snapshot)
+        } catch (e: Exception) {
+            FirestoreReadMeter.handleFirestoreError("systemConfig/leaderboard", e)
+            cachedLeaderboard ?: emptyList()
+        }
+
+        cachedLeaderboard = entries
+        lastLeaderboardFetchAt = now
+        emit(entries)
     }.flowOn(Dispatchers.IO).distinctUntilChanged()
+
+    private fun parseLeaderboardEntries(snapshot: DocumentSnapshot?): List<LeaderboardEntry> {
+        if (snapshot == null || !snapshot.exists()) return emptyList()
+        @Suppress("UNCHECKED_CAST")
+        val rawList = snapshot.get("entries") as? List<Map<String, Any>> ?: return emptyList()
+        return rawList.mapNotNull { map ->
+            val co2 = (map["co2SavedKg"] as? Number)?.toDouble() ?: 0.0
+            if (co2 > 0.0) {
+                LeaderboardEntry(
+                    uid = map["uid"] as? String ?: "",
+                    name = map["name"] as? String ?: "Contributor",
+                    department = map["department"] as? String ?: "Operations",
+                    co2SavedKg = co2,
+                    rideCount = (map["rideCount"] as? Number)?.toInt() ?: 0,
+                    rank = (map["rank"] as? Number)?.toInt() ?: 1
+                )
+            } else null
+        }.sortedByDescending { it.co2SavedKg }.take(3).mapIndexed { idx, item ->
+            item.copy(rank = idx + 1)
+        }
+    }
 
     suspend fun updateLeaderboard(entries: List<LeaderboardEntry>): Result<Unit> {
         return runCatching {
@@ -234,14 +284,73 @@ class AdminRepository(
 
     fun getDefaultLeaderboardEntries(): List<LeaderboardEntry> = emptyList()
 
+    /**
+     * Paged users fetch for Members tab (Task T2).
+     * Costs <= 25 reads per page instead of streaming all 300 users.
+     */
+    suspend fun fetchUsersPage(
+        pageSize: Long = 25L,
+        startAfterDoc: DocumentSnapshot? = null
+    ): Result<Pair<List<User>, DocumentSnapshot?>> = runCatching {
+        var query = db.collection("users")
+            .orderBy("fullName")
+            .limit(pageSize)
+        if (startAfterDoc != null) {
+            query = query.startAfter(startAfterDoc)
+        }
+        val snapshot = query.get().await()
+        FirestoreReadMeter.recordQuerySnapshot("users", snapshot)
+        val users = snapshot.documents.mapNotNull { doc ->
+            try { User.fromSnapshot(doc) } catch (_: Exception) { null }
+        }
+        val lastDoc = snapshot.documents.lastOrNull()
+        Pair(users, lastDoc)
+    }
+
+    /**
+     * Server-side prefix range search by full name or employee ID (Task T2).
+     * Replaces client-side "load everyone and filter".
+     */
+    suspend fun searchUsers(
+        searchQuery: String,
+        limit: Long = 25L
+    ): Result<List<User>> = runCatching {
+        val trimmed = searchQuery.trim()
+        if (trimmed.isEmpty()) return@runCatching emptyList()
+
+        val query = if (trimmed.all { it.isDigit() }) {
+            db.collection("users")
+                .whereEqualTo("employeeId", trimmed)
+                .limit(limit)
+        } else {
+            db.collection("users")
+                .whereGreaterThanOrEqualTo("fullName", trimmed)
+                .whereLessThanOrEqualTo("fullName", trimmed + "\uf8ff")
+                .limit(limit)
+        }
+        val snapshot = query.get().await()
+        FirestoreReadMeter.recordQuerySnapshot("users", snapshot)
+        snapshot.documents.mapNotNull { doc ->
+            try { User.fromSnapshot(doc) } catch (_: Exception) { null }
+        }
+    }
+
+    /**
+     * Bounded flow fallback for callers expecting a Flow (caps at 25 instead of 300).
+     */
     fun getAllUsersFlow(): Flow<List<User>> = callbackFlow {
+        FirestoreReadMeter.recordListenerStart("users/pagedFallback")
         val listener = db.collection("users")
+            .orderBy("fullName")
+            .limit(25)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     Log.w("AdminRepository", "getAllUsersFlow listener error: ${error.message}", error)
+                    FirestoreReadMeter.handleFirestoreError("users", error)
                     trySend(emptyList())
                     return@addSnapshotListener
                 }
+                FirestoreReadMeter.recordQuerySnapshot("users", snapshot)
                 val users = snapshot?.documents?.mapNotNull { doc ->
                     try {
                         User.fromSnapshot(doc)
@@ -256,26 +365,32 @@ class AdminRepository(
     }.flowOn(Dispatchers.IO).distinctUntilChanged()
 
     fun getAllRidesFlow(): Flow<List<Ride>> = callbackFlow {
+        FirestoreReadMeter.recordListenerStart("rides/adminAll")
         val listener = db.collection("rides")
-            .limit(100)
+            .limit(50)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
+                    FirestoreReadMeter.handleFirestoreError("rides", error)
                     trySend(emptyList())
                     return@addSnapshotListener
                 }
+                FirestoreReadMeter.recordQuerySnapshot("rides", snapshot)
                 trySend(snapshot?.documents?.mapNotNull { it.toObject(Ride::class.java) }.orEmpty())
             }
         awaitClose { listener.remove() }
     }.flowOn(Dispatchers.IO).distinctUntilChanged()
 
     fun getAllRequestsFlow(): Flow<List<RideRequest>> = callbackFlow {
+        FirestoreReadMeter.recordListenerStart("rideRequests/adminAll")
         val listener = db.collection("rideRequests")
-            .limit(100)
+            .limit(50)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
+                    FirestoreReadMeter.handleFirestoreError("rideRequests", error)
                     trySend(emptyList())
                     return@addSnapshotListener
                 }
+                FirestoreReadMeter.recordQuerySnapshot("rideRequests", snapshot)
                 trySend(snapshot?.documents?.mapNotNull { it.toObject(RideRequest::class.java) }.orEmpty())
             }
         awaitClose { listener.remove() }
@@ -284,41 +399,54 @@ class AdminRepository(
     fun getAllRideRequestsFlow(): Flow<List<RideRequest>> = getAllRequestsFlow()
 
     fun getTodayRidesFlow(date: String): Flow<List<Ride>> = callbackFlow {
+        FirestoreReadMeter.recordListenerStart("rides/adminToday")
         val listener = db.collection("rides")
             .whereEqualTo("date", date)
             .limit(25)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
+                    FirestoreReadMeter.handleFirestoreError("rides", error)
                     trySend(emptyList())
                     return@addSnapshotListener
                 }
+                FirestoreReadMeter.recordQuerySnapshot("rides", snapshot)
                 trySend(snapshot?.documents?.mapNotNull { it.toObject(Ride::class.java) }.orEmpty())
             }
         awaitClose { listener.remove() }
     }.flowOn(Dispatchers.IO).distinctUntilChanged()
 
     fun getTodayRequestsFlow(date: String): Flow<List<RideRequest>> = callbackFlow {
+        FirestoreReadMeter.recordListenerStart("rideRequests/adminToday")
         val listener = db.collection("rideRequests")
             .whereEqualTo("date", date)
             .limit(25)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
+                    FirestoreReadMeter.handleFirestoreError("rideRequests", error)
                     trySend(emptyList())
                     return@addSnapshotListener
                 }
+                FirestoreReadMeter.recordQuerySnapshot("rideRequests", snapshot)
                 trySend(snapshot?.documents?.mapNotNull { it.toObject(RideRequest::class.java) }.orEmpty())
             }
         awaitClose { listener.remove() }
     }.flowOn(Dispatchers.IO).distinctUntilChanged()
 
+    /**
+     * Bounded audit logs flow (Task T6: limit 20).
+     */
     fun getAuditLogsFlow(): Flow<List<AuditLog>> = callbackFlow {
+        FirestoreReadMeter.recordListenerStart("auditLogs/stream")
         val listener = db.collection("auditLogs")
-            .limit(50)
+            .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .limit(20)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
+                    FirestoreReadMeter.handleFirestoreError("auditLogs", error)
                     trySend(emptyList())
                     return@addSnapshotListener
                 }
+                FirestoreReadMeter.recordQuerySnapshot("auditLogs", snapshot)
                 val logs = snapshot?.documents?.mapNotNull { it.toObject(AuditLog::class.java) }
                     ?.sortedByDescending { it.timestamp }
                     .orEmpty()
@@ -326,6 +454,20 @@ class AdminRepository(
             }
         awaitClose { listener.remove() }
     }.flowOn(Dispatchers.IO).distinctUntilChanged()
+
+    suspend fun fetchMoreAuditLogs(
+        startAfterTimestamp: Long,
+        limit: Long = 20L
+    ): Result<List<AuditLog>> = runCatching {
+        val snapshot = db.collection("auditLogs")
+            .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .startAfter(startAfterTimestamp)
+            .limit(limit)
+            .get()
+            .await()
+        FirestoreReadMeter.recordQuerySnapshot("auditLogs", snapshot)
+        snapshot.documents.mapNotNull { it.toObject(AuditLog::class.java) }
+    }
 
     suspend fun setUserRole(targetUid: String, role: String, adminUser: User? = null): Result<Unit> {
         return runCatching {

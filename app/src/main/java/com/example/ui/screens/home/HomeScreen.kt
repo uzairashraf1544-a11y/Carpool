@@ -28,6 +28,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.R
 import com.example.data.model.CommuteSelection
+import com.example.util.TimeUtils
 import com.example.data.model.CommuteSlot
 import com.example.data.model.LocalTravelState
 import com.example.data.model.MasterData
@@ -82,7 +83,7 @@ fun HomeScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val userPreferencesRepository = remember { UserPreferencesRepository(context) }
-    val todayDate = remember { LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE) }
+    val todayDate = remember { TimeUtils.todayKarachiString() }
 
     // Local UID-scoped UI Mode (Single source of truth for screen browsing)
     val localSavedMode by userPreferencesRepository.getLastUiModeFlow(user.uid).collectAsState(initial = null)

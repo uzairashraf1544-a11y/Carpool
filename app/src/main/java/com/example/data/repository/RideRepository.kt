@@ -4,6 +4,7 @@ import android.util.Log
 import com.example.BuildConfig
 import com.example.TravelBuddyApplication
 import com.example.data.model.Co2Record
+import com.example.data.model.LeaderboardEntry
 import com.example.data.model.MasterData
 import com.example.data.model.PassengerEligibility
 import com.example.data.model.PassengerNeed
@@ -11,6 +12,9 @@ import com.example.data.model.PickupSide
 import com.example.data.model.Ride
 import com.example.data.model.RideRequest
 import com.example.data.model.User
+import com.example.util.FirestoreReadMeter
+import com.example.util.RemoteConfigDefaults
+import com.example.util.TimeUtils
 import com.example.util.TravelBuddyNotificationManager
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
@@ -38,7 +42,7 @@ class RideRepository(
         const val TAG = "RideRepoDebug"
         const val OUTCOME_COMPLETED = "COMPLETED"
         const val OUTCOME_DID_NOT_TRAVEL = "DID_NOT_TRAVEL"
-        const val DISCOVERY_LIMIT = 20L
+        const val DISCOVERY_LIMIT = 10L
         const val DEFAULT_EXPIRY_MILLIS = 18 * 3600 * 1000L // 18 hours validity
     }
 
@@ -447,10 +451,9 @@ class RideRepository(
     // ----------------------------------------------------
 
     /**
-     * PASSENGER DISCOVERS DRIVERS
-     * - TOWNSHIP viewer: TOWNSHIP + OTHER
-     * - PLANT viewer: PLANT + OTHER
-     * - OTHER viewer: All active same-day driver rides
+     * PASSENGER DISCOVERS DRIVERS (Task T3)
+     * Initial page bounded to limit(10) (or 5 in safe mode).
+     * Deterministic orderBy(departureTime).
      */
     fun getAvailableDriversFlow(
         date: String,
@@ -458,18 +461,23 @@ class RideRepository(
     ): Flow<List<Ride>> = callbackFlow {
         val currentUid = auth.currentUser?.uid.orEmpty()
         val normalizedSide = MasterData.getSideForPickup(pickupSide).name
+        val limit = RemoteConfigDefaults.discoveryInitialLimit
 
-        // Single consolidated query sharing cache and listener across all users for today
+        FirestoreReadMeter.recordListenerStart("rides/discovery")
+
         val reg = db.collection("rides")
             .whereEqualTo("date", date)
             .whereIn("status", listOf(Ride.STATUS_AVAILABLE, Ride.STATUS_PARTIALLY_FULL))
-            .limit(DISCOVERY_LIMIT)
+            .orderBy("departureTime")
+            .limit(limit)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     logFirestoreError("getAvailableDriversFlow", "rides", currentUid, error)
+                    FirestoreReadMeter.handleFirestoreError("rides/discovery", error)
                     trySend(emptyList())
                     return@addSnapshotListener
                 }
+                FirestoreReadMeter.recordQuerySnapshot("rides/discovery", snapshot)
                 val now = System.currentTimeMillis()
                 val rides = snapshot?.documents?.mapNotNull { it.toObject(Ride::class.java) }.orEmpty()
                 val filtered = rides.filter { ride ->
@@ -484,6 +492,36 @@ class RideRepository(
         awaitClose { reg.remove() }
     }.flowOn(Dispatchers.IO).distinctUntilChanged()
 
+    /**
+     * "Load more" action for passenger discovery using startAfter (Task T3).
+     * Guarantees Invariant F6: Passengers see all rides without truncation.
+     */
+    suspend fun fetchMoreAvailableDrivers(
+        date: String,
+        pickupSide: String,
+        lastDepartureTime: String,
+        limit: Long = 10L
+    ): Result<List<Ride>> = runCatching {
+        val currentUid = auth.currentUser?.uid.orEmpty()
+        val normalizedSide = MasterData.getSideForPickup(pickupSide).name
+        val snapshot = db.collection("rides")
+            .whereEqualTo("date", date)
+            .whereIn("status", listOf(Ride.STATUS_AVAILABLE, Ride.STATUS_PARTIALLY_FULL))
+            .orderBy("departureTime")
+            .startAfter(lastDepartureTime)
+            .limit(limit)
+            .get()
+            .await()
+        FirestoreReadMeter.recordQuerySnapshot("rides/discoveryPaged", snapshot)
+        val now = System.currentTimeMillis()
+        snapshot.documents.mapNotNull { it.toObject(Ride::class.java) }.filter { ride ->
+            ride.driverId != currentUid &&
+                ride.availableSeats > 0 &&
+                (ride.expiresAt == 0L || ride.expiresAt > now) &&
+                (normalizedSide == "OTHER" || ride.pickupSide == "OTHER" || ride.pickupSide == normalizedSide)
+        }
+    }
+
     // Legacy overload mapping direction/window to side
     fun getAvailableDriversFlow(
         date: String,
@@ -495,11 +533,9 @@ class RideRepository(
     }
 
     /**
-     * DRIVER DISCOVERS PASSENGERS LOOKING FOR A RIDE
-     * - TOWNSHIP viewer: TOWNSHIP + OTHER
-     * - PLANT viewer: PLANT + OTHER
-     * - OTHER viewer: All active same-day passenger needs
-     * Driver does NOT need an existing active ride!
+     * DRIVER DISCOVERS PASSENGERS LOOKING FOR A RIDE (Task T3)
+     * Initial page bounded to limit(10) (or 5 in safe mode).
+     * Deterministic orderBy(createdAt).
      */
     fun getMatchingPassengerNeedsFlow(
         date: String,
@@ -507,18 +543,23 @@ class RideRepository(
     ): Flow<List<PassengerNeed>> = callbackFlow {
         val currentUid = auth.currentUser?.uid.orEmpty()
         val normalizedSide = MasterData.getSideForPickup(pickupSide).name
+        val limit = RemoteConfigDefaults.discoveryInitialLimit
 
-        // Single consolidated query sharing cache and listener across all users for today
+        FirestoreReadMeter.recordListenerStart("passengerNeeds/discovery")
+
         val reg = db.collection("passengerNeeds")
             .whereEqualTo("date", date)
             .whereEqualTo("status", PassengerNeed.STATUS_LOOKING)
-            .limit(DISCOVERY_LIMIT)
+            .orderBy("createdAt")
+            .limit(limit)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     logFirestoreError("getMatchingPassengerNeedsFlow", "passengerNeeds", currentUid, error)
+                    FirestoreReadMeter.handleFirestoreError("passengerNeeds/discovery", error)
                     trySend(emptyList())
                     return@addSnapshotListener
                 }
+                FirestoreReadMeter.recordQuerySnapshot("passengerNeeds/discovery", snapshot)
                 val now = System.currentTimeMillis()
                 val needs = snapshot?.documents?.mapNotNull { it.toObject(PassengerNeed::class.java) }.orEmpty()
                 val filtered = needs.filter { need ->
@@ -531,6 +572,35 @@ class RideRepository(
             }
         awaitClose { reg.remove() }
     }.flowOn(Dispatchers.IO).distinctUntilChanged()
+
+    /**
+     * "Load more" action for driver needs discovery using startAfter (Task T3).
+     * Guarantees Invariant F7: Drivers see all passenger needs without truncation.
+     */
+    suspend fun fetchMorePassengerNeeds(
+        date: String,
+        pickupSide: String,
+        lastCreatedAt: Long,
+        limit: Long = 10L
+    ): Result<List<PassengerNeed>> = runCatching {
+        val currentUid = auth.currentUser?.uid.orEmpty()
+        val normalizedSide = MasterData.getSideForPickup(pickupSide).name
+        val snapshot = db.collection("passengerNeeds")
+            .whereEqualTo("date", date)
+            .whereEqualTo("status", PassengerNeed.STATUS_LOOKING)
+            .orderBy("createdAt")
+            .startAfter(lastCreatedAt)
+            .limit(limit)
+            .get()
+            .await()
+        FirestoreReadMeter.recordQuerySnapshot("passengerNeeds/discoveryPaged", snapshot)
+        val now = System.currentTimeMillis()
+        snapshot.documents.mapNotNull { it.toObject(PassengerNeed::class.java) }.filter { need ->
+            need.passengerId != currentUid &&
+                (need.expiresAt == 0L || need.expiresAt > now) &&
+                (normalizedSide == "OTHER" || need.pickupSide == "OTHER" || need.pickupSide == normalizedSide)
+        }
+    }
 
     // Legacy overload
     fun getMatchingPassengerNeedsFlow(
@@ -1388,10 +1458,13 @@ class RideRepository(
         val baselineKm = sysDoc?.getDouble("baselineDistanceKm") ?: 3.0
         val co2Factor = sysDoc?.getDouble("co2FactorKgPerKm") ?: 0.12
 
+        var driverCo2SavedKg = 0.0
+
         // 1. Log Driver CO2 Record (driver avoids 1 single-occupancy trip per passenger carried)
         if (driverId.isNotBlank() && passengerCount > 0) {
             val totalAvoidedKm = passengerCount * baselineKm
             val co2SavedKg = totalAvoidedKm * co2Factor
+            driverCo2SavedKg = co2SavedKg
             val record = Co2Record(
                 recordId = "${rideId}_driver_${driverId}",
                 rideId = rideId,
@@ -1456,8 +1529,13 @@ class RideRepository(
             }
         }
 
-        // 3. Recalculate and update the backend leaderboard
-        syncLeaderboardFromCo2Records()
+        // 3. Recalculate and update the backend leaderboard (Task T1: 1-read transaction)
+        syncLeaderboardFromCo2Records(
+            completingUid = driverId,
+            completingName = driverName,
+            completingDept = driverDepartment,
+            completingCo2Increment = driverCo2SavedKg
+        )
     }
 
     suspend fun logPassengerCo2Savings(
@@ -1505,44 +1583,114 @@ class RideRepository(
             Log.w(TAG, "Failed to increment passenger stats: ${e.message}")
         }
 
-        syncLeaderboardFromCo2Records()
+        syncLeaderboardFromCo2Records(
+            completingUid = passengerId,
+            completingName = passengerName,
+            completingDept = passengerDepartment,
+            completingCo2Increment = pCo2SavedKg
+        )
     }
 
-    suspend fun syncLeaderboardFromCo2Records(): Result<Unit> = runCatching {
-        // Fast path: Query top 10 users by totalCo2SavedKg descending (at most 10 reads)
-        val snapshot = try {
-            db.collection("users")
-                .orderBy("totalCo2SavedKg", com.google.firebase.firestore.Query.Direction.DESCENDING)
-                .limit(10)
-                .get()
-                .await()
-        } catch (_: Exception) { null }
+    /**
+     * Optimized 1-read transaction for leaderboard synchronization (Task T1).
+     * Eliminates the 10-read query on users collection.
+     * Writes to systemConfig/leaderboard ONLY if the completing user enters or changes the top 3.
+     */
+    suspend fun syncLeaderboardFromCo2Records(
+        completingUid: String? = null,
+        completingName: String? = null,
+        completingDept: String? = null,
+        completingCo2Increment: Double = 0.0
+    ): Result<Unit> = runCatching {
+        val leaderboardRef = db.collection("systemConfig").document("leaderboard")
+        db.runTransaction { tx ->
+            val snapshot = tx.get(leaderboardRef)
+            FirestoreReadMeter.recordDocumentSnapshot("systemConfig/leaderboard", snapshot)
 
-        val topSavers = snapshot?.documents?.mapNotNull { doc ->
-            User.fromSnapshot(doc)
-        }?.filter { it.isActive() && it.totalCo2SavedKg > 0.0 }
-        ?.take(3)
-        ?.mapIndexed { idx, u ->
-            mapOf(
-                "uid" to u.uid,
-                "name" to u.name.ifBlank { "Contributor" },
-                "department" to u.department.ifBlank { "Operations" },
-                "co2SavedKg" to u.totalCo2SavedKg,
-                "rideCount" to u.totalCompletedRides,
-                "rank" to idx + 1
-            )
-        }.orEmpty()
+            @Suppress("UNCHECKED_CAST")
+            val rawList = snapshot.get("entries") as? List<Map<String, Any>> ?: emptyList()
+            val currentEntries = rawList.mapNotNull { map ->
+                val co2 = (map["co2SavedKg"] as? Number)?.toDouble() ?: 0.0
+                if (co2 > 0.0) {
+                    LeaderboardEntry(
+                        uid = map["uid"] as? String ?: "",
+                        name = map["name"] as? String ?: "Contributor",
+                        department = map["department"] as? String ?: "Operations",
+                        co2SavedKg = co2,
+                        rideCount = (map["rideCount"] as? Number)?.toInt() ?: 0,
+                        rank = (map["rank"] as? Number)?.toInt() ?: 1
+                    )
+                } else null
+            }.sortedByDescending { it.co2SavedKg }.toMutableList()
 
-        if (topSavers.isNotEmpty()) {
-            db.collection("systemConfig").document("leaderboard").set(
-                mapOf(
-                    "entries" to topSavers,
-                    "updatedAt" to System.currentTimeMillis()
-                ),
-                SetOptions.merge()
-            ).await()
-            Log.d(TAG, "LEADERBOARD_SYNCED | count=${topSavers.size}")
-        }
+            if (!completingUid.isNullOrBlank() && completingCo2Increment > 0.0) {
+                val existingIndex = currentEntries.indexOfFirst { it.uid == completingUid }
+                val currentMinCo2 = currentEntries.lastOrNull()?.co2SavedKg ?: 0.0
+
+                if (existingIndex != -1) {
+                    val existing = currentEntries[existingIndex]
+                    currentEntries[existingIndex] = existing.copy(
+                        co2SavedKg = existing.co2SavedKg + completingCo2Increment,
+                        rideCount = existing.rideCount + 1
+                    )
+                } else if (currentEntries.size < 3) {
+                    currentEntries.add(
+                        LeaderboardEntry(
+                            uid = completingUid,
+                            name = completingName?.ifBlank { "Contributor" } ?: "Contributor",
+                            department = completingDept?.ifBlank { "Operations" } ?: "Operations",
+                            co2SavedKg = completingCo2Increment,
+                            rideCount = 1,
+                            rank = 1
+                        )
+                    )
+                } else if (completingCo2Increment > currentMinCo2) {
+                    val userDoc = tx.get(db.collection("users").document(completingUid))
+                    FirestoreReadMeter.recordDocumentSnapshot("users", userDoc)
+                    val totalCo2 = userDoc.getDouble("totalCo2SavedKg") ?: completingCo2Increment
+                    if (totalCo2 > currentMinCo2) {
+                        currentEntries.add(
+                            LeaderboardEntry(
+                                uid = completingUid,
+                                name = completingName?.ifBlank { "Contributor" } ?: "Contributor",
+                                department = completingDept?.ifBlank { "Operations" } ?: "Operations",
+                                co2SavedKg = totalCo2,
+                                rideCount = userDoc.getLong("totalCompletedRides")?.toInt() ?: 1,
+                                rank = 1
+                            )
+                        )
+                    } else {
+                        return@runTransaction
+                    }
+                } else {
+                    return@runTransaction
+                }
+
+                val newTop3 = currentEntries.sortedByDescending { it.co2SavedKg }.take(3).mapIndexed { idx, item ->
+                    item.copy(rank = idx + 1)
+                }
+                val listData = newTop3.map {
+                    mapOf(
+                        "uid" to it.uid,
+                        "name" to it.name,
+                        "department" to it.department,
+                        "co2SavedKg" to it.co2SavedKg,
+                        "rideCount" to it.rideCount,
+                        "rank" to it.rank
+                    )
+                }
+                tx.set(
+                    leaderboardRef,
+                    mapOf(
+                        "entries" to listData,
+                        "updatedAt" to System.currentTimeMillis()
+                    ),
+                    SetOptions.merge()
+                )
+                FirestoreReadMeter.recordWrite("systemConfig/leaderboard", 1)
+                Log.d(TAG, "LEADERBOARD_TRANSACTION_UPDATED | count=${newTop3.size}")
+            }
+        }.await()
     }
 
     private fun logFirestoreError(opName: String, path: String, uid: String, error: Throwable) {

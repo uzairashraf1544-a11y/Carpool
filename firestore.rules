@@ -727,7 +727,7 @@ service cloud.firestore {
 
     match /systemConfig/{configId} {
       allow read: if signedIn();
-      allow create, update: if signedIn() && configId == 'leaderboard';
+      allow create, update: if signedIn() && configId == 'leaderboard' && isActiveUser();
       allow create, update, delete: if isAdmin();
     }
 

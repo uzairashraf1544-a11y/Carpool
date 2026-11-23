@@ -37,8 +37,11 @@ import com.example.data.repository.UserDataDeletionPreview
 import com.example.ui.components.ErrorContainer
 import com.example.ui.theme.*
 import com.example.util.ManagementReportRow
+import com.example.util.RemoteConfigDefaults
 import com.example.util.ReportCacheManager
 import com.example.util.ReportExporter
+import com.example.util.TimeUtils
+import com.google.firebase.firestore.DocumentSnapshot
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -67,23 +70,38 @@ fun AdminDashboardScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var selectedTab by remember { mutableIntStateOf(0) }
-    val today = remember { LocalDate.now().toString() }
+    val today = remember { TimeUtils.todayKarachiString() }
     val config by adminRepository.getSystemConfigFlow().collectAsState(initial = com.example.data.model.SystemConfig())
 
     // Stream the single pre-aggregated report document (Costs EXACTLY 1 read for entire dashboard summary)
     val reportSummary by adminRepository.getManagementReportFlow().collectAsState(initial = ManagementReportSummary())
 
-    // Stream users ONLY when on Members tab (2) or Data Management tab (7)
-    val users by remember(selectedTab) {
-        if (selectedTab in listOf(2, 7)) adminRepository.getAllUsersFlow() else flowOf(emptyList())
-    }.collectAsState(initial = emptyList())
+    // Paged members state (Task T2: 25 per page instead of streaming 300 users)
+    var membersList by remember { mutableStateOf<List<User>>(emptyList()) }
+    var lastUserDoc by remember { mutableStateOf<DocumentSnapshot?>(null) }
+    var hasMoreMembers by remember { mutableStateOf(true) }
+    var isLoadingMembers by remember { mutableStateOf(false) }
 
-    // Stream today's operations ONLY when on Overview tab (0)
+    LaunchedEffect(selectedTab) {
+        if (selectedTab in listOf(2, 7) && membersList.isEmpty()) {
+            isLoadingMembers = true
+            adminRepository.fetchUsersPage(pageSize = 25L).onSuccess { (initialUsers, lastDoc) ->
+                membersList = initialUsers
+                lastUserDoc = lastDoc
+                if (initialUsers.size < 25) hasMoreMembers = false
+            }
+            isLoadingMembers = false
+        }
+    }
+
+    val users = membersList
+
+    // Stream today's operations ONLY when on Overview tab (0) and enabled via RemoteConfig
     val todayRides by remember(selectedTab, today) {
-        if (selectedTab == 0) adminRepository.getTodayRidesFlow(today) else flowOf(emptyList())
+        if (selectedTab == 0 && RemoteConfigDefaults.adminLiveOverviewEnabled) adminRepository.getTodayRidesFlow(today) else flowOf(emptyList())
     }.collectAsState(initial = emptyList())
     val todayRequests by remember(selectedTab, today) {
-        if (selectedTab == 0) adminRepository.getTodayRequestsFlow(today) else flowOf(emptyList())
+        if (selectedTab == 0 && RemoteConfigDefaults.adminLiveOverviewEnabled) adminRepository.getTodayRequestsFlow(today) else flowOf(emptyList())
     }.collectAsState(initial = emptyList())
 
     // Only stream audit logs when the admin actually views the Audit Logs tab (index 5)
@@ -1414,6 +1432,38 @@ fun AdminDashboardScreen(
                                     }
                                 )
                                 Spacer(Modifier.height(10.dp))
+                            }
+
+                            if (hasMoreMembers && search.isBlank()) {
+                                Spacer(Modifier.height(8.dp))
+                                OutlinedButton(
+                                    onClick = {
+                                        scope.launch {
+                                            isLoadingMembers = true
+                                            adminRepository.fetchUsersPage(pageSize = 25L, startAfterDoc = lastUserDoc).onSuccess { (newUsers, nextDoc) ->
+                                                if (newUsers.isEmpty()) {
+                                                    hasMoreMembers = false
+                                                } else {
+                                                    membersList = membersList + newUsers
+                                                    lastUserDoc = nextDoc
+                                                    if (newUsers.size < 25) hasMoreMembers = false
+                                                }
+                                            }
+                                            isLoadingMembers = false
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    enabled = !isLoadingMembers
+                                ) {
+                                    if (isLoadingMembers) {
+                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Loading next page...")
+                                    } else {
+                                        Text("Load More Members (Showing ${membersList.size})")
+                                    }
+                                }
                             }
                         }
                     }
