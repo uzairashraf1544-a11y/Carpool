@@ -32,6 +32,7 @@ import com.example.data.model.User
 import com.example.data.repository.AdminRepository
 import com.example.data.repository.GlobalResetPreview
 import com.example.data.repository.GlobalResetType
+import com.example.data.repository.ManagementReportSummary
 import com.example.data.repository.UserDataDeletionPreview
 import com.example.ui.components.ErrorContainer
 import com.example.ui.theme.*
@@ -65,12 +66,26 @@ fun AdminDashboardScreen(
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val users by adminRepository.getAllUsersFlow().collectAsState(initial = emptyList())
-    val rides by adminRepository.getAllRidesFlow().collectAsState(initial = emptyList())
-    val requests by adminRepository.getAllRideRequestsFlow().collectAsState(initial = emptyList())
+    var selectedTab by remember { mutableIntStateOf(0) }
+    val today = remember { LocalDate.now().toString() }
     val config by adminRepository.getSystemConfigFlow().collectAsState(initial = com.example.data.model.SystemConfig())
 
-    var selectedTab by remember { mutableIntStateOf(0) }
+    // Stream the single pre-aggregated report document (Costs EXACTLY 1 read for entire dashboard summary)
+    val reportSummary by adminRepository.getManagementReportFlow().collectAsState(initial = ManagementReportSummary())
+
+    // Stream users ONLY when on Members tab (2) or Data Management tab (7)
+    val users by remember(selectedTab) {
+        if (selectedTab in listOf(2, 7)) adminRepository.getAllUsersFlow() else flowOf(emptyList())
+    }.collectAsState(initial = emptyList())
+
+    // Stream today's operations ONLY when on Overview tab (0)
+    val todayRides by remember(selectedTab, today) {
+        if (selectedTab == 0) adminRepository.getTodayRidesFlow(today) else flowOf(emptyList())
+    }.collectAsState(initial = emptyList())
+    val todayRequests by remember(selectedTab, today) {
+        if (selectedTab == 0) adminRepository.getTodayRequestsFlow(today) else flowOf(emptyList())
+    }.collectAsState(initial = emptyList())
+
     // Only stream audit logs when the admin actually views the Audit Logs tab (index 5)
     val auditLogs by remember(selectedTab) {
         if (selectedTab == 5) adminRepository.getAuditLogsFlow() else flowOf(emptyList())
@@ -157,34 +172,44 @@ fun AdminDashboardScreen(
         factorText = config.co2FactorKgPerKm.toString()
     }
 
-    val today = remember { LocalDate.now().toString() }
-    val completedRides = remember(rides) { rides.filter { it.status == Ride.STATUS_COMPLETED } }
-    val completedRequests = remember(requests) { requests.filter { it.status == RideRequest.STATUS_COMPLETED } }
-
-    val totalPassengersShared = completedRides.sumOf {
-        if (it.finalPassengerCount > 0) it.finalPassengerCount else it.acceptedPassengerIds.size
-    }
-    val totalAvoidedKm = totalPassengersShared * config.baselineDistanceKm
-    val totalCo2 = totalAvoidedKm * config.co2FactorKgPerKm
-    val adminCount = users.count { it.isAdmin() }
-    val activeMembersCount = users.count { it.isActive() }
-    val blockedMembersCount = users.count { it.isBlocked() }
-    val removedMembersCount = users.count { it.isRemoved() }
-
-    val activeParticipantIds = buildSet {
-        completedRides.forEach { ride ->
-            add(ride.driverId)
-            addAll(ride.acceptedPassengerIds)
+    LaunchedEffect(reportSummary) {
+        if (reportSummary.rows.isNotEmpty()) {
+            cachedReportRows = reportSummary.rows
+            reportLastUpdatedTimestamp = reportSummary.updatedAt
+            ReportCacheManager.saveReportCache(context, reportSummary.rows, reportSummary.updatedAt)
         }
     }
 
-    val todayAvailableDrivers = rides.count {
+    val totalPassengersShared = if (reportSummary.totalPassengerRides > 0) {
+        reportSummary.totalPassengerRides
+    } else {
+        cachedReportRows.sumOf { it.ridesAsPassenger }
+    }
+    val totalAvoidedKm = totalPassengersShared * config.baselineDistanceKm
+    val totalCo2 = if (reportSummary.totalCo2Saved > 0.0) {
+        reportSummary.totalCo2Saved
+    } else {
+        cachedReportRows.sumOf { it.co2Saved }
+    }
+    val totalMembersCount = if (reportSummary.totalMembers > 0) reportSummary.totalMembers else maxOf(users.size, cachedReportRows.size)
+    val adminCount = users.count { it.isAdmin() }
+    val activeMembersCount = if (users.isNotEmpty()) users.count { it.isActive() } else totalMembersCount
+    val blockedMembersCount = users.count { it.isBlocked() }
+    val removedMembersCount = users.count { it.isRemoved() }
+
+    val activeParticipantCount = if (reportSummary.rows.isNotEmpty()) {
+        reportSummary.rows.count { it.ridesAsDriver > 0 || it.ridesAsPassenger > 0 }
+    } else {
+        cachedReportRows.count { it.ridesAsDriver > 0 || it.ridesAsPassenger > 0 }
+    }
+
+    val todayAvailableDrivers = todayRides.count {
         it.date == today && it.status in listOf(Ride.STATUS_AVAILABLE, Ride.STATUS_PARTIALLY_FULL)
     }
-    val todayPendingRequests = requests.count { it.date == today && it.status == RideRequest.STATUS_REQUESTED }
-    val todayActiveRides = rides.count { it.date == today && it.status in listOf(Ride.STATUS_PARTIALLY_FULL, Ride.STATUS_FULL, Ride.STATUS_RIDE_STARTED) }
-    val todayCompletedRides = rides.count { it.date == today && it.status == Ride.STATUS_COMPLETED }
-    val todayCancelledRides = rides.count { it.date == today && it.status == Ride.STATUS_CANCELLED }
+    val todayPendingRequests = todayRequests.count { it.date == today && it.status == RideRequest.STATUS_REQUESTED }
+    val todayActiveRides = todayRides.count { it.date == today && it.status in listOf(Ride.STATUS_PARTIALLY_FULL, Ride.STATUS_FULL, Ride.STATUS_RIDE_STARTED) }
+    val todayCompletedRides = todayRides.count { it.date == today && it.status == Ride.STATUS_COMPLETED }
+    val todayCancelledRides = todayRides.count { it.date == today && it.status == Ride.STATUS_CANCELLED }
 
     // Filtered Members for Member Management Tab
     val filteredMembers = remember(users, search, memberStatusFilter) {
@@ -242,58 +267,17 @@ fun AdminDashboardScreen(
         }
     }
 
-    // Filtered rides and requests for report period
-    val periodCompletedRides = remember(completedRides, reportPreset, reportFromDate, reportToDate) {
-        completedRides.filter { isDateInRange(it.date) }
-    }
-    val periodCompletedRequests = remember(completedRequests, reportPreset, reportFromDate, reportToDate) {
-        completedRequests.filter { isDateInRange(it.date) }
-    }
-
-    // Management Report Row Aggregations (One row per person - Local Storage Cache Priority)
+    // Management Report Row Aggregations (Single Consolidated Document & Cache Priority)
     val managementReportRows: List<ManagementReportRow> = remember(
         cachedReportRows,
-        users,
-        periodCompletedRides,
-        periodCompletedRequests,
-        config,
-        reportStatusFilter,
+        reportSummary.rows,
         reportSortBy,
         search
     ) {
-        val baseRows = if (cachedReportRows.isNotEmpty()) {
-            cachedReportRows
-        } else {
-            val filteredUsersForReport = users.filter { u ->
-                when (reportStatusFilter) {
-                    "Active" -> u.isActive()
-                    "Blocked" -> u.isBlocked()
-                    "Removed" -> u.isRemoved()
-                    else -> true
-                }
-            }
-
-            filteredUsersForReport.map { person ->
-                val driverRides = periodCompletedRides.filter { it.driverId == person.uid }
-                val driverRideCount = driverRides.size
-                val passengersDelivered = driverRides.sumOf {
-                    if (it.finalPassengerCount > 0) it.finalPassengerCount else it.completedPassengerIds.size.coerceAtLeast(it.acceptedPassengerIds.size)
-                }
-
-                val passengerReqs = periodCompletedRequests.filter { it.passengerId == person.uid }
-                val passengerRideCount = passengerReqs.size
-
-                val avoidedDistanceKm = (passengersDelivered + passengerRideCount) * config.baselineDistanceKm
-                val personCo2Saved = avoidedDistanceKm * config.co2FactorKgPerKm
-
-                ManagementReportRow(
-                    serialNumber = 0, // Assigned after sorting
-                    personName = person.name.ifBlank { "User ${person.uid.take(5)}" },
-                    co2Saved = personCo2Saved,
-                    ridesAsDriver = driverRideCount,
-                    ridesAsPassenger = passengerRideCount
-                )
-            }
+        val baseRows = when {
+            cachedReportRows.isNotEmpty() -> cachedReportRows
+            reportSummary.rows.isNotEmpty() -> reportSummary.rows
+            else -> emptyList()
         }
 
         val filteredBySearch = if (search.isNotBlank()) {
@@ -314,39 +298,40 @@ fun AdminDashboardScreen(
     }
 
     // Report Period Summary Metrics
-    val reportTotalMembers = managementReportRows.size
-    val reportTotalCo2Saved = managementReportRows.sumOf { it.co2Saved }
-    val reportTotalDriverRides = periodCompletedRides.size
-    val reportTotalPassengerRides = periodCompletedRequests.size
+    val reportTotalMembers = if (reportSummary.totalMembers > 0) reportSummary.totalMembers else managementReportRows.size
+    val reportTotalCo2Saved = if (reportSummary.totalCo2Saved > 0.0) reportSummary.totalCo2Saved else managementReportRows.sumOf { it.co2Saved }
+    val reportTotalDriverRides = reportSummary.totalDriverRides
+    val reportTotalPassengerRides = reportSummary.totalPassengerRides
 
-    // Contributor Rankings for Analytics Tab
-    val driverRanking = remember(completedRides, config, userById) {
-        completedRides.groupBy { it.driverId }.map { (uid, driverRides) ->
-            val passengerCount = driverRides.sumOf {
-                if (it.finalPassengerCount > 0) it.finalPassengerCount else it.acceptedPassengerIds.size
-            }
+    // Contributor Rankings for Analytics Tab (Derived from pre-aggregated report rows with 0 queries)
+    val driverRanking = remember(managementReportRows) {
+        managementReportRows.filter { it.ridesAsDriver > 0 }.map { row ->
             ContributorRow(
-                uid = uid,
-                name = driverRides.firstOrNull()?.driverName.orEmpty().ifBlank { userById[uid]?.name ?: "Unknown" },
-                department = driverRides.firstOrNull()?.driverDepartment.orEmpty().ifBlank { userById[uid]?.department.orEmpty() },
-                rideCount = driverRides.size,
-                passengerCount = passengerCount,
-                co2Kg = passengerCount * config.baselineDistanceKm * config.co2FactorKgPerKm
+                uid = row.serialNumber.toString(),
+                name = row.personName,
+                department = "Operations",
+                rideCount = row.ridesAsDriver,
+                passengerCount = row.ridesAsDriver,
+                co2Kg = row.co2Saved
             )
-        }.sortedByDescending { it.co2Kg }
+        }.sortedByDescending { it.rideCount }
     }
 
-    val passengerRanking = remember(completedRequests, config, userById) {
-        completedRequests.groupBy { it.passengerId }.map { (uid, passengerRequests) ->
+    val passengerRanking = remember(managementReportRows) {
+        managementReportRows.filter { it.ridesAsPassenger > 0 }.map { row ->
             ContributorRow(
-                uid = uid,
-                name = passengerRequests.firstOrNull()?.passengerName.orEmpty().ifBlank { userById[uid]?.name ?: "Unknown" },
-                department = passengerRequests.firstOrNull()?.passengerDepartment.orEmpty().ifBlank { userById[uid]?.department.orEmpty() },
-                rideCount = passengerRequests.size,
-                passengerCount = passengerRequests.size,
-                co2Kg = passengerRequests.size * config.baselineDistanceKm * config.co2FactorKgPerKm
+                uid = row.serialNumber.toString(),
+                name = row.personName,
+                department = "Operations",
+                rideCount = row.ridesAsPassenger,
+                passengerCount = row.ridesAsPassenger,
+                co2Kg = row.co2Saved
             )
-        }.sortedByDescending { it.co2Kg }
+        }.sortedByDescending { it.rideCount }
+    }
+
+    val statsByMemberName = remember(managementReportRows) {
+        managementReportRows.associateBy { it.personName }
     }
 
     // ----------------------------------------------------
@@ -1155,12 +1140,12 @@ fun AdminDashboardScreen(
 
                         SectionTitle("EXECUTIVE SNAPSHOT")
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            AdminMetricCard("Total Members", users.size.toString(), Icons.Rounded.Groups, Modifier.weight(1f))
-                            AdminMetricCard("Active Participants", activeParticipantIds.size.toString(), Icons.Rounded.PersonPinCircle, Modifier.weight(1f))
+                            AdminMetricCard("Total Members", totalMembersCount.toString(), Icons.Rounded.Groups, Modifier.weight(1f))
+                            AdminMetricCard("Active Participants", activeParticipantCount.toString(), Icons.Rounded.PersonPinCircle, Modifier.weight(1f))
                         }
                         Spacer(Modifier.height(10.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            AdminMetricCard("Completed Rides", completedRides.size.toString(), Icons.Rounded.DirectionsCar, Modifier.weight(1f))
+                            AdminMetricCard("Completed Rides", reportSummary.totalDriverRides.toString(), Icons.Rounded.DirectionsCar, Modifier.weight(1f))
                             AdminMetricCard("CO₂ Saved", String.format(Locale.US, "%.1f kg", totalCo2), Icons.Rounded.Eco, Modifier.weight(1f))
                         }
 
@@ -1387,13 +1372,10 @@ fun AdminDashboardScreen(
                             InfoCard { Text("No members found matching your search and filter.", color = TextSecondary) }
                         } else {
                             filteredMembers.forEachIndexed { index, member ->
-                                val memberDriverRides = completedRides.count { it.driverId == member.uid }
-                                val memberPassengerRides = completedRequests.count { it.passengerId == member.uid }
-                                val memberDriverPassengers = completedRides.filter { it.driverId == member.uid }.sumOf {
-                                    if (it.finalPassengerCount > 0) it.finalPassengerCount else it.completedPassengerIds.size.coerceAtLeast(it.acceptedPassengerIds.size)
-                                }
-                                val memberAvoidedKm = (memberDriverPassengers + memberPassengerRides) * config.baselineDistanceKm
-                                val memberCo2 = memberAvoidedKm * config.co2FactorKgPerKm
+                                val rowStats = statsByMemberName[member.name]
+                                val memberDriverRides = rowStats?.ridesAsDriver ?: 0
+                                val memberPassengerRides = rowStats?.ridesAsPassenger ?: 0
+                                val memberCo2 = if (member.totalCo2SavedKg > 0.0) member.totalCo2SavedKg else (rowStats?.co2Saved ?: 0.0)
 
                                 MemberManagementCard(
                                     serialNumber = index + 1,

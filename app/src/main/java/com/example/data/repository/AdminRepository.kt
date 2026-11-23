@@ -283,6 +283,34 @@ class AdminRepository(
 
     fun getAllRideRequestsFlow(): Flow<List<RideRequest>> = getAllRequestsFlow()
 
+    fun getTodayRidesFlow(date: String): Flow<List<Ride>> = callbackFlow {
+        val listener = db.collection("rides")
+            .whereEqualTo("date", date)
+            .limit(25)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                trySend(snapshot?.documents?.mapNotNull { it.toObject(Ride::class.java) }.orEmpty())
+            }
+        awaitClose { listener.remove() }
+    }.flowOn(Dispatchers.IO).distinctUntilChanged()
+
+    fun getTodayRequestsFlow(date: String): Flow<List<RideRequest>> = callbackFlow {
+        val listener = db.collection("rideRequests")
+            .whereEqualTo("date", date)
+            .limit(25)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                trySend(snapshot?.documents?.mapNotNull { it.toObject(RideRequest::class.java) }.orEmpty())
+            }
+        awaitClose { listener.remove() }
+    }.flowOn(Dispatchers.IO).distinctUntilChanged()
+
     fun getAuditLogsFlow(): Flow<List<AuditLog>> = callbackFlow {
         val listener = db.collection("auditLogs")
             .limit(50)
@@ -581,7 +609,7 @@ class AdminRepository(
     fun getPendingApprovalsFlow(): Flow<List<User>> = callbackFlow {
         val listener = db.collection("users")
             .whereEqualTo("accountStatus", User.STATUS_PENDING_APPROVAL)
-            .addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+            .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     Log.w("AdminRepository", "getPendingApprovalsFlow listener error: ${error.message}", error)
                     trySend(emptyList())
@@ -619,7 +647,7 @@ class AdminRepository(
 
     /**
      * Fetch the management report as a SINGLE Firestore document read (systemConfig/managementReport).
-     * Costs EXACTLY 1 read for all 300+ employees.
+     * Costs EXACTLY 1 read for all employees and all rides.
      */
     suspend fun fetchManagementReport(forceServer: Boolean = true): Result<Pair<List<ManagementReportRow>, Long>> = runCatching {
         val source = if (forceServer) Source.SERVER else Source.DEFAULT
@@ -634,7 +662,7 @@ class AdminRepository(
             val timestamp = doc.getLong("updatedAt") ?: System.currentTimeMillis()
             @Suppress("UNCHECKED_CAST")
             val rawList = doc.get("rows") as? List<Map<String, Any>>
-            if (!rawList.isNullOrEmpty()) {
+            if (rawList != null) {
                 val rows = rawList.mapIndexed { idx, map ->
                     ManagementReportRow(
                         serialNumber = (map["serialNumber"] as? Number)?.toInt() ?: (idx + 1),
@@ -648,9 +676,52 @@ class AdminRepository(
             }
         }
 
-        // If not found or empty, aggregate once, persist to single document, and return
+        // Only aggregate if document does not exist in Firestore
         recalculateAndPersistManagementReport().getOrThrow()
     }
+
+    /**
+     * Real-time stream of the single aggregated report document (systemConfig/managementReport).
+     * Costs EXACTLY 1 read for the entire screen.
+     */
+    fun getManagementReportFlow(): Flow<ManagementReportSummary> = callbackFlow {
+        val listener = db.collection("systemConfig").document("managementReport")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null || snapshot == null || !snapshot.exists()) {
+                    trySend(ManagementReportSummary())
+                    return@addSnapshotListener
+                }
+                val ts = snapshot.getLong("updatedAt") ?: System.currentTimeMillis()
+                val totalMembers = snapshot.getLong("totalMembers")?.toInt() ?: 0
+                val totalCo2 = snapshot.getDouble("totalCo2Saved") ?: 0.0
+                val totalDriverRides = snapshot.getLong("totalDriverRides")?.toInt() ?: 0
+                val totalPassengerRides = snapshot.getLong("totalPassengerRides")?.toInt() ?: 0
+
+                @Suppress("UNCHECKED_CAST")
+                val rawList = snapshot.get("rows") as? List<Map<String, Any>>
+                val rows = rawList?.mapIndexed { idx, map ->
+                    ManagementReportRow(
+                        serialNumber = (map["serialNumber"] as? Number)?.toInt() ?: (idx + 1),
+                        personName = map["personName"] as? String ?: "User",
+                        co2Saved = (map["co2Saved"] as? Number)?.toDouble() ?: 0.0,
+                        ridesAsDriver = (map["ridesAsDriver"] as? Number)?.toInt() ?: 0,
+                        ridesAsPassenger = (map["ridesAsPassenger"] as? Number)?.toInt() ?: 0
+                    )
+                }.orEmpty()
+
+                trySend(
+                    ManagementReportSummary(
+                        rows = rows,
+                        totalMembers = if (totalMembers > 0) totalMembers else rows.size,
+                        totalCo2Saved = if (totalCo2 > 0.0) totalCo2 else rows.sumOf { it.co2Saved },
+                        totalDriverRides = totalDriverRides,
+                        totalPassengerRides = totalPassengerRides,
+                        updatedAt = ts
+                    )
+                )
+            }
+        awaitClose { listener.remove() }
+    }.flowOn(Dispatchers.IO).distinctUntilChanged()
 
     /**
      * Recalculates the management report, writes it to the single document systemConfig/managementReport,
@@ -1285,4 +1356,13 @@ data class UserDataDeletionPreview(
     val passengerNeedsCount: Int,
     val ridesAnonymizedForPassengersCount: Int,
     val isAccountDeleted: Boolean
+)
+
+data class ManagementReportSummary(
+    val rows: List<ManagementReportRow> = emptyList(),
+    val totalMembers: Int = 0,
+    val totalCo2Saved: Double = 0.0,
+    val totalDriverRides: Int = 0,
+    val totalPassengerRides: Int = 0,
+    val updatedAt: Long = 0L
 )

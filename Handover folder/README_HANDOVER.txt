@@ -41,7 +41,7 @@ installations.
    • App Title, Short Description, and Full Store Listing Description.
    • Target SDK: 36 (Android 16), Min SDK: 24 (Android 7.0).
    • Application ID: com.aistudio.carpool.kjqxcv
-   • Version Code: 5, Version Name: 5.0.
+   • Version Code: 6, Version Name: 6.0.
    • Full list of declared permissions and explanations for Data Safety declarations.
 
 7. HOW_TO_UPLOAD_TO_PLAY_STORE.md
@@ -53,9 +53,16 @@ installations.
    • Required for Firebase Authentication (Google Sign-In and Phone/SMS verification).
 
 --------------------------------------------------------------------------------
-2. RELEASE NOTES FOR THIS VERSION (v5.0 / VersionCode 5)
+2. RELEASE NOTES FOR THIS VERSION (v6.0 / VersionCode 6)
 --------------------------------------------------------------------------------
-Production release v5.0 of TravelBuddy corporate carpool platform:
+Production release v6.0 of TravelBuddy corporate carpool platform:
+• Single-Read Bulk Architecture & Extreme Read Optimization:
+  - Eliminated full collection queries and real-time listeners across Admin Dashboard.
+  - Replaced multi-document scans with a single pre-aggregated Firestore document (`systemConfig/managementReport`) providing all report rows, total community CO2, total driver rides, total passenger trips, and member counts in EXACTLY 1 read.
+  - Eliminated in-listener writes in `RideRepository.getDriverTodayRideFlow` to prevent local cache write-rejection loop spikes.
+  - De-duplicated `AuthRepository.authStateFlow` profile observers on initial startup.
+  - Made member collection streaming lazy (only attached when admin views Members or Data Management tabs).
+  - Bounded today's operational queries by date filter to avoid database-wide scans.
 • Admin Data Management Section (Pre-Launch Global Reset & User Data Erasure):
   - Part 1: Global Reset with 3 Separate Actions:
     1. Clear Rides Data Only: Wipes all rides, bookings, needs, and history. Preserves all user accounts.

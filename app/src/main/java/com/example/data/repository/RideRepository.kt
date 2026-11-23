@@ -203,22 +203,6 @@ class RideRepository(
                 }
                 val rides = snapshot?.documents?.mapNotNull { it.toObject(Ride::class.java) }.orEmpty()
 
-                // Auto-close check: when all accepted passengers have completed
-                val runningRide = rides.firstOrNull {
-                    it.status in listOf(Ride.STATUS_PARTIALLY_FULL, Ride.STATUS_FULL, Ride.STATUS_RIDE_STARTED)
-                }
-                if (runningRide != null && runningRide.acceptedPassengerIds.isNotEmpty() &&
-                    runningRide.completedPassengerIds.containsAll(runningRide.acceptedPassengerIds)
-                ) {
-                    db.collection("rides").document(runningRide.rideId).update(
-                        mapOf(
-                            "status" to Ride.STATUS_COMPLETED,
-                            "completedAt" to System.currentTimeMillis(),
-                            "updatedAt" to System.currentTimeMillis()
-                        )
-                    )
-                }
-
                 val activeRide = rides
                     .filter { ride ->
                         ride.status in listOf(

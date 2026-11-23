@@ -120,7 +120,6 @@ class AuthRepository(
         }
 
         auth.addAuthStateListener(listener)
-        observeProfile(auth.currentUser)
 
         awaitClose {
             profileRegistration?.remove()
