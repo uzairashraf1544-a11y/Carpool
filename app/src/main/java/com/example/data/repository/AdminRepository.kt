@@ -988,10 +988,11 @@ class AdminRepository(
     ): Result<GlobalResetPreview> = runCatching {
         require(adminUser.isAdmin()) { "Access denied. Administrator privileges are required." }
         val currentAdminUid = adminUser.uid
+        val shouldWipeAdminData = removeAdminData || resetType == GlobalResetType.RIDES_ONLY
 
         // 1. Calculate rides count via server aggregation (1 read per 1,000 docs)
         val totalRidesCount = db.collection("rides").count().get(AggregateSource.SERVER).await().count
-        val affectedRidesCount = if (removeAdminData) {
+        val affectedRidesCount = if (shouldWipeAdminData) {
             totalRidesCount.toInt()
         } else {
             val adminRidesCount = db.collection("rides")
@@ -1005,7 +1006,7 @@ class AdminRepository(
 
         // 2. Calculate bookings count via server aggregation
         val totalReqsCount = db.collection("rideRequests").count().get(AggregateSource.SERVER).await().count
-        val affectedBookingsCount = if (removeAdminData) {
+        val affectedBookingsCount = if (shouldWipeAdminData) {
             totalReqsCount.toInt()
         } else {
             val adminPassengerReqsCount = db.collection("rideRequests")
@@ -1025,7 +1026,7 @@ class AdminRepository(
 
         // 3. Calculate passenger needs count via server aggregation
         val totalNeedsCount = db.collection("passengerNeeds").count().get(AggregateSource.SERVER).await().count
-        val affectedNeedsCount = if (removeAdminData) {
+        val affectedNeedsCount = if (shouldWipeAdminData) {
             totalNeedsCount.toInt()
         } else {
             val adminNeedsCount = db.collection("passengerNeeds")
@@ -1069,7 +1070,9 @@ class AdminRepository(
         deleteAccount: Boolean
     ): Result<UserDataDeletionPreview> = runCatching {
         require(adminUser.isAdmin()) { "Access denied. Administrator privileges are required." }
-        require(targetUser.uid != adminUser.uid) { "Cannot delete your own administrator account." }
+        if (deleteAccount) {
+            require(targetUser.uid != adminUser.uid) { "Cannot delete your own administrator account." }
+        }
         val targetUid = targetUser.uid
 
         // Rides given as driver - fetch driver rides to accurately count anonymized vs unbooked
@@ -1128,11 +1131,13 @@ class AdminRepository(
 
         val allUsers = usersSnap.documents.mapNotNull { User.fromSnapshot(it) }
 
+        val shouldWipeAdminData = removeAdminData || resetType == GlobalResetType.RIDES_ONLY
+
         // Determine which docs to delete
         val ridesToDelete = mutableListOf<com.google.firebase.firestore.DocumentReference>()
         for (doc in ridesSnap.documents) {
             val dUid = doc.getString("driverId").orEmpty()
-            if (removeAdminData || dUid != currentAdminUid) {
+            if (shouldWipeAdminData || dUid != currentAdminUid) {
                 ridesToDelete.add(doc.reference)
             }
         }
@@ -1141,7 +1146,7 @@ class AdminRepository(
         for (doc in reqsSnap.documents) {
             val pUid = doc.getString("passengerId").orEmpty()
             val dUid = doc.getString("driverId").orEmpty()
-            if (removeAdminData || (pUid != currentAdminUid && dUid != currentAdminUid)) {
+            if (shouldWipeAdminData || (pUid != currentAdminUid && dUid != currentAdminUid)) {
                 reqsToDelete.add(doc.reference)
             }
         }
@@ -1149,7 +1154,7 @@ class AdminRepository(
         val needsToDelete = mutableListOf<com.google.firebase.firestore.DocumentReference>()
         for (doc in needsSnap.documents) {
             val pUid = doc.getString("passengerId").orEmpty()
-            if (removeAdminData || pUid != currentAdminUid) {
+            if (shouldWipeAdminData || pUid != currentAdminUid) {
                 needsToDelete.add(doc.reference)
             }
         }
@@ -1157,7 +1162,7 @@ class AdminRepository(
         val locksToDelete = mutableListOf<com.google.firebase.firestore.DocumentReference>()
         for (doc in activeLocksSnap.documents) {
             val pUid = doc.getString("passengerId").orEmpty()
-            if (removeAdminData || pUid != currentAdminUid) {
+            if (shouldWipeAdminData || pUid != currentAdminUid) {
                 locksToDelete.add(doc.reference)
             }
         }
@@ -1170,8 +1175,8 @@ class AdminRepository(
 
         for (u in allUsers) {
             if (u.uid == currentAdminUid) {
-                // NEVER delete current admin
-                if (removeAdminData) {
+                // NEVER delete current admin account, but reset counters to zero
+                if (shouldWipeAdminData || resetType == GlobalResetType.ALL_EXCEPT_ADMIN_ACCOUNTS) {
                     usersToResetCounters.add(u)
                 }
                 continue
@@ -1187,7 +1192,7 @@ class AdminRepository(
                 }
                 GlobalResetType.ALL_EXCEPT_ADMIN_ACCOUNTS -> {
                     if (u.isAdmin()) {
-                        if (removeAdminData) usersToResetCounters.add(u)
+                        usersToResetCounters.add(u)
                     } else {
                         usersToDelete.add(u)
                     }
@@ -1329,7 +1334,9 @@ class AdminRepository(
         reason: String = ""
     ): Result<UserDataDeletionPreview> = runCatching {
         require(adminUser.isAdmin()) { "Access denied. Administrator privileges are required." }
-        require(targetUser.uid != adminUser.uid) { "Cannot delete your own administrator account." }
+        if (deleteAccount) {
+            require(targetUser.uid != adminUser.uid) { "Cannot delete your own administrator account." }
+        }
         val now = System.currentTimeMillis()
         val targetUid = targetUser.uid
 

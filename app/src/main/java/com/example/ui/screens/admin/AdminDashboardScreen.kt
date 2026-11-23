@@ -151,7 +151,7 @@ fun AdminDashboardScreen(
     var statusMessage by remember { mutableStateOf<String?>(null) }
 
     // Data Management States
-    var removeAdminDataOnReset by remember { mutableStateOf(false) }
+    var removeAdminDataOnReset by remember { mutableStateOf(true) }
     var pendingGlobalResetType by remember { mutableStateOf<GlobalResetType?>(null) }
     var globalResetPreview by remember { mutableStateOf<GlobalResetPreview?>(null) }
     var isCalculatingResetPreview by remember { mutableStateOf(false) }
@@ -2165,12 +2165,10 @@ fun AdminDashboardScreen(
                                 val q = userSearchQuery.trim().lowercase()
                                 if (q.isBlank()) emptyList()
                                 else users.filter { u ->
-                                    u.uid != user.uid && (
-                                        u.name.lowercase().contains(q) ||
-                                        u.email.lowercase().contains(q) ||
-                                        u.employeeId.lowercase().contains(q) ||
-                                        u.department.lowercase().contains(q)
-                                    )
+                                    u.name.lowercase().contains(q) ||
+                                    u.email.lowercase().contains(q) ||
+                                    u.employeeId.lowercase().contains(q) ||
+                                    u.department.lowercase().contains(q)
                                 }.take(5)
                             }
 
@@ -2256,12 +2254,19 @@ fun AdminDashboardScreen(
                                             }
                                         }
 
+                                        val isSelfAdmin = target.uid == user.uid
+                                        if (isSelfAdmin) {
+                                            LaunchedEffect(target.uid) {
+                                                deleteUserAccountOption = false
+                                            }
+                                        }
+
                                         // Option B: Delete data + account
                                         Card(
-                                            onClick = { deleteUserAccountOption = true },
+                                            onClick = { if (!isSelfAdmin) deleteUserAccountOption = true },
                                             shape = RoundedCornerShape(8.dp),
                                             colors = CardDefaults.cardColors(
-                                                containerColor = if (deleteUserAccountOption) MaterialTheme.colorScheme.error.copy(alpha = 0.08f) else Surface
+                                                containerColor = if (deleteUserAccountOption) MaterialTheme.colorScheme.error.copy(alpha = 0.08f) else Surface.copy(alpha = if (isSelfAdmin) 0.5f else 1f)
                                             ),
                                             border = BorderStroke(1.dp, if (deleteUserAccountOption) MaterialTheme.colorScheme.error else Outline.copy(alpha = 0.3f)),
                                             modifier = Modifier.fillMaxWidth()
@@ -2269,13 +2274,24 @@ fun AdminDashboardScreen(
                                             Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                                                 RadioButton(
                                                     selected = deleteUserAccountOption,
-                                                    onClick = { deleteUserAccountOption = true },
+                                                    onClick = { if (!isSelfAdmin) deleteUserAccountOption = true },
+                                                    enabled = !isSelfAdmin,
                                                     colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.error)
                                                 )
                                                 Spacer(Modifier.width(6.dp))
                                                 Column {
-                                                    Text("Delete Data + Account", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
-                                                    Text("Permanently erases user profile, employee ID registry, and all rides/bookings.", fontSize = 11.sp, color = TextSecondary)
+                                                    Text(
+                                                        "Delete Data + Account",
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 13.sp,
+                                                        color = if (isSelfAdmin) TextSecondary else MaterialTheme.colorScheme.error
+                                                    )
+                                                    Text(
+                                                        if (isSelfAdmin) "Admin account login cannot be deleted. Select 'Delete Data Only' to wipe your personal ride history."
+                                                        else "Permanently erases user profile, employee ID registry, and all rides/bookings.",
+                                                        fontSize = 11.sp,
+                                                        color = TextSecondary
+                                                    )
                                                 }
                                             }
                                         }
