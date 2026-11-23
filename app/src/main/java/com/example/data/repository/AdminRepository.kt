@@ -3,6 +3,7 @@ package com.example.data.repository
 import android.util.Log
 import com.example.data.model.AuditLog
 import com.example.data.model.LeaderboardEntry
+import com.example.data.model.PassengerNeed
 import com.example.data.model.Ride
 import com.example.data.model.RideRequest
 import com.example.data.model.SystemConfig
@@ -761,4 +762,527 @@ class AdminRepository(
             Unit
         }
     }
+
+    // =========================================================================
+    // DATA MANAGEMENT: GLOBAL RESET & PER-USER DELETION
+    // =========================================================================
+
+    suspend fun previewGlobalReset(
+        adminUser: User,
+        resetType: GlobalResetType,
+        removeAdminData: Boolean
+    ): Result<GlobalResetPreview> = runCatching {
+        require(adminUser.isAdmin()) { "Access denied. Administrator privileges are required." }
+        val currentAdminUid = adminUser.uid
+
+        // 1. Fetch rides
+        val ridesSnap = db.collection("rides").get().await()
+        val allRides = ridesSnap.documents.mapNotNull { it.toObject(Ride::class.java) }
+        val affectedRides = if (removeAdminData) {
+            allRides
+        } else {
+            allRides.filter { it.driverId != currentAdminUid }
+        }
+
+        // 2. Fetch bookings / ride requests
+        val reqsSnap = db.collection("rideRequests").get().await()
+        val allReqs = reqsSnap.documents.mapNotNull { it.toObject(RideRequest::class.java) }
+        val affectedBookings = if (removeAdminData) {
+            allReqs
+        } else {
+            allReqs.filter { it.passengerId != currentAdminUid && it.driverId != currentAdminUid }
+        }
+
+        // 3. Fetch passenger needs
+        val needsSnap = db.collection("passengerNeeds").get().await()
+        val allNeeds = needsSnap.documents.mapNotNull { it.toObject(PassengerNeed::class.java) }
+        val affectedNeeds = if (removeAdminData) {
+            allNeeds
+        } else {
+            allNeeds.filter { it.passengerId != currentAdminUid }
+        }
+
+        // 4. Calculate accounts to delete
+        val usersSnap = db.collection("users").get().await()
+        val allUsers = usersSnap.documents.mapNotNull { User.fromSnapshot(it) }
+        val affectedUsersCount = when (resetType) {
+            GlobalResetType.RIDES_ONLY -> 0
+            GlobalResetType.ALL_INCLUDING_USERS_EXCEPT_CURRENT_ADMIN -> {
+                allUsers.count { it.uid != currentAdminUid }
+            }
+            GlobalResetType.ALL_EXCEPT_ADMIN_ACCOUNTS -> {
+                allUsers.count { !it.isAdmin() && it.uid != currentAdminUid }
+            }
+        }
+
+        GlobalResetPreview(
+            ridesCount = affectedRides.size,
+            bookingsCount = affectedBookings.size,
+            passengerNeedsCount = affectedNeeds.size,
+            userAccountsCount = affectedUsersCount
+        )
+    }
+
+    suspend fun previewUserDeletion(
+        adminUser: User,
+        targetUser: User,
+        deleteAccount: Boolean
+    ): Result<UserDataDeletionPreview> = runCatching {
+        require(adminUser.isAdmin()) { "Access denied. Administrator privileges are required." }
+        require(targetUser.uid != adminUser.uid) { "Cannot delete your own administrator account." }
+        val targetUid = targetUser.uid
+
+        // Rides given as driver
+        val driverRidesSnap = db.collection("rides").whereEqualTo("driverId", targetUid).get().await()
+        val driverRides = driverRidesSnap.documents.mapNotNull { it.toObject(Ride::class.java) }
+        val anonymizedCount = driverRides.count { it.acceptedPassengerIds.isNotEmpty() || it.completedPassengerIds.isNotEmpty() }
+
+        // Bookings taken as passenger
+        val passengerReqsSnap = db.collection("rideRequests").whereEqualTo("passengerId", targetUid).get().await()
+
+        // Needs posted as passenger
+        val needsSnap = db.collection("passengerNeeds").whereEqualTo("passengerId", targetUid).get().await()
+
+        UserDataDeletionPreview(
+            targetUid = targetUid,
+            targetName = targetUser.name,
+            ridesAsDriverCount = driverRides.size,
+            bookingsAsPassengerCount = passengerReqsSnap.size(),
+            passengerNeedsCount = needsSnap.size(),
+            ridesAnonymizedForPassengersCount = anonymizedCount,
+            isAccountDeleted = deleteAccount
+        )
+    }
+
+    suspend fun executeGlobalReset(
+        adminUser: User,
+        resetType: GlobalResetType,
+        removeAdminData: Boolean,
+        reason: String = ""
+    ): Result<GlobalResetPreview> = runCatching {
+        require(adminUser.isAdmin()) { "Access denied. Administrator privileges are required." }
+        require(adminUser.uid.isNotBlank()) { "Invalid administrator credentials." }
+        val now = System.currentTimeMillis()
+        val currentAdminUid = adminUser.uid
+
+        // 1. Get preview counts first
+        val preview = previewGlobalReset(adminUser, resetType, removeAdminData).getOrThrow()
+
+        // 2. Fetch all collections
+        val ridesSnap = db.collection("rides").get().await()
+        val reqsSnap = db.collection("rideRequests").get().await()
+        val needsSnap = db.collection("passengerNeeds").get().await()
+        val activeLocksSnap = db.collection("activePassengerRides").get().await()
+        val co2Snap = db.collection("co2Records").get().await()
+        val usersSnap = db.collection("users").get().await()
+
+        val allUsers = usersSnap.documents.mapNotNull { User.fromSnapshot(it) }
+
+        // Determine which docs to delete
+        val ridesToDelete = mutableListOf<com.google.firebase.firestore.DocumentReference>()
+        for (doc in ridesSnap.documents) {
+            val dUid = doc.getString("driverId").orEmpty()
+            if (removeAdminData || dUid != currentAdminUid) {
+                ridesToDelete.add(doc.reference)
+            }
+        }
+
+        val reqsToDelete = mutableListOf<com.google.firebase.firestore.DocumentReference>()
+        for (doc in reqsSnap.documents) {
+            val pUid = doc.getString("passengerId").orEmpty()
+            val dUid = doc.getString("driverId").orEmpty()
+            if (removeAdminData || (pUid != currentAdminUid && dUid != currentAdminUid)) {
+                reqsToDelete.add(doc.reference)
+            }
+        }
+
+        val needsToDelete = mutableListOf<com.google.firebase.firestore.DocumentReference>()
+        for (doc in needsSnap.documents) {
+            val pUid = doc.getString("passengerId").orEmpty()
+            if (removeAdminData || pUid != currentAdminUid) {
+                needsToDelete.add(doc.reference)
+            }
+        }
+
+        val locksToDelete = mutableListOf<com.google.firebase.firestore.DocumentReference>()
+        for (doc in activeLocksSnap.documents) {
+            val pUid = doc.getString("passengerId").orEmpty()
+            if (removeAdminData || pUid != currentAdminUid) {
+                locksToDelete.add(doc.reference)
+            }
+        }
+
+        val co2ToDelete = co2Snap.documents.map { it.reference }
+
+        // User accounts to delete vs keep
+        val usersToDelete = mutableListOf<User>()
+        val usersToResetCounters = mutableListOf<User>()
+
+        for (u in allUsers) {
+            if (u.uid == currentAdminUid) {
+                // NEVER delete current admin
+                if (removeAdminData) {
+                    usersToResetCounters.add(u)
+                }
+                continue
+            }
+            when (resetType) {
+                GlobalResetType.RIDES_ONLY -> {
+                    // Keep all accounts, reset counters
+                    usersToResetCounters.add(u)
+                }
+                GlobalResetType.ALL_INCLUDING_USERS_EXCEPT_CURRENT_ADMIN -> {
+                    // Delete all other users
+                    usersToDelete.add(u)
+                }
+                GlobalResetType.ALL_EXCEPT_ADMIN_ACCOUNTS -> {
+                    if (u.isAdmin()) {
+                        if (removeAdminData) usersToResetCounters.add(u)
+                    } else {
+                        usersToDelete.add(u)
+                    }
+                }
+            }
+        }
+
+        // Execute batch operations in chunks (up to 450 per batch)
+        var currentBatch = db.batch()
+        var opCount = 0
+
+        suspend fun commitBatchIfNeeded() {
+            if (opCount >= 450) {
+                currentBatch.commit().await()
+                currentBatch = db.batch()
+                opCount = 0
+            }
+        }
+
+        for (ref in ridesToDelete) {
+            currentBatch.delete(ref)
+            opCount++
+            commitBatchIfNeeded()
+        }
+
+        for (ref in reqsToDelete) {
+            currentBatch.delete(ref)
+            opCount++
+            commitBatchIfNeeded()
+        }
+
+        for (ref in needsToDelete) {
+            currentBatch.delete(ref)
+            opCount++
+            commitBatchIfNeeded()
+        }
+
+        for (ref in locksToDelete) {
+            currentBatch.delete(ref)
+            opCount++
+            commitBatchIfNeeded()
+        }
+
+        for (ref in co2ToDelete) {
+            currentBatch.delete(ref)
+            opCount++
+            commitBatchIfNeeded()
+        }
+
+        // Delete users and their employeeRegistry
+        for (u in usersToDelete) {
+            currentBatch.delete(db.collection("users").document(u.uid))
+            opCount++
+            commitBatchIfNeeded()
+
+            if (u.employeeId.isNotBlank()) {
+                currentBatch.delete(db.collection("employeeRegistry").document(u.employeeId.uppercase().trim()))
+                opCount++
+                commitBatchIfNeeded()
+            }
+        }
+
+        // Reset counters on kept users
+        for (u in usersToResetCounters) {
+            currentBatch.update(
+                db.collection("users").document(u.uid),
+                mapOf(
+                    "totalCo2SavedKg" to 0.0,
+                    "totalCompletedRides" to 0,
+                    "updatedAt" to now
+                )
+            )
+            opCount++
+            commitBatchIfNeeded()
+        }
+
+        if (opCount > 0) {
+            currentBatch.commit().await()
+        }
+
+        // Reset leaderboard and management report
+        try {
+            db.collection("systemConfig").document("leaderboard").set(
+                mapOf(
+                    "entries" to emptyList<Map<String, Any>>(),
+                    "updatedAt" to now
+                ),
+                com.google.firebase.firestore.SetOptions.merge()
+            ).await()
+        } catch (_: Exception) {}
+
+        try {
+            db.collection("systemConfig").document("managementReport").set(
+                mapOf(
+                    "rows" to emptyList<Map<String, Any>>(),
+                    "updatedAt" to now,
+                    "totalMembers" to if (resetType == GlobalResetType.RIDES_ONLY) allUsers.size else (allUsers.size - usersToDelete.size),
+                    "totalCo2Saved" to 0.0,
+                    "totalDriverRides" to 0,
+                    "totalPassengerRides" to 0
+                ),
+                com.google.firebase.firestore.SetOptions.merge()
+            ).await()
+        } catch (_: Exception) {}
+
+        // Write immutable audit log
+        val auditAction = when (resetType) {
+            GlobalResetType.RIDES_ONLY -> AuditLog.ACTION_RESET_RIDES_ONLY
+            GlobalResetType.ALL_INCLUDING_USERS_EXCEPT_CURRENT_ADMIN -> AuditLog.ACTION_RESET_ALL_EXCEPT_CURRENT_ADMIN
+            GlobalResetType.ALL_EXCEPT_ADMIN_ACCOUNTS -> AuditLog.ACTION_RESET_ALL_EXCEPT_ADMINS
+        }
+        val auditId = "${now}_global_reset_${auditAction.lowercase()}"
+        val auditLog = AuditLog(
+            auditId = auditId,
+            adminUid = adminUser.uid,
+            adminName = adminUser.name,
+            adminEmail = adminUser.email,
+            targetUid = "ALL",
+            targetName = resetType.name,
+            targetEmail = "",
+            action = auditAction,
+            reason = (reason.trim().ifBlank { "Global data reset executed before app launch" }) +
+                    " [Rides: ${preview.ridesCount}, Bookings: ${preview.bookingsCount}, Needs: ${preview.passengerNeedsCount}, Accounts: ${preview.userAccountsCount}, AdminDataRemoved: $removeAdminData]",
+            timestamp = now
+        )
+        try {
+            db.collection("auditLogs").document(auditId).set(auditLog).await()
+        } catch (e: Exception) {
+            Log.e("AdminRepository", "Failed to write audit log for global reset", e)
+        }
+
+        preview
+    }
+
+    suspend fun executePerUserDataDeletion(
+        adminUser: User,
+        targetUser: User,
+        deleteAccount: Boolean,
+        reason: String = ""
+    ): Result<UserDataDeletionPreview> = runCatching {
+        require(adminUser.isAdmin()) { "Access denied. Administrator privileges are required." }
+        require(targetUser.uid != adminUser.uid) { "Cannot delete your own administrator account." }
+        val now = System.currentTimeMillis()
+        val targetUid = targetUser.uid
+
+        // 1. Get preview
+        val preview = previewUserDeletion(adminUser, targetUser, deleteAccount).getOrThrow()
+
+        // 2. Query driver rides given by targetUser
+        val driverRidesSnap = db.collection("rides").whereEqualTo("driverId", targetUid).get().await()
+        val driverRides = driverRidesSnap.documents.mapNotNull { doc ->
+            doc.toObject(Ride::class.java)?.let { Pair(doc.reference, it) }
+        }
+
+        var currentBatch = db.batch()
+        var opCount = 0
+
+        suspend fun commitBatchIfNeeded() {
+            if (opCount >= 450) {
+                currentBatch.commit().await()
+                currentBatch = db.batch()
+                opCount = 0
+            }
+        }
+
+        for ((rideRef, ride) in driverRides) {
+            val hasPassengers = ride.acceptedPassengerIds.isNotEmpty() || ride.completedPassengerIds.isNotEmpty()
+            if (hasPassengers) {
+                // PRESERVE PASSENGERS' HISTORY: Do NOT delete ride! Anonymize driver personal details.
+                currentBatch.update(
+                    rideRef,
+                    mapOf(
+                        "driverName" to "Former Colleague",
+                        "driverPhone" to "",
+                        "driverDepartment" to "—",
+                        "updatedAt" to now
+                    )
+                )
+                opCount++
+                commitBatchIfNeeded()
+
+                // Update passenger bookings linked to this ride to anonymize driver details as well
+                val bookingsForRideSnap = db.collection("rideRequests")
+                    .whereEqualTo("rideId", ride.rideId)
+                    .get()
+                    .await()
+                for (bookingDoc in bookingsForRideSnap.documents) {
+                    currentBatch.update(
+                        bookingDoc.reference,
+                        mapOf(
+                            "driverName" to "Former Colleague",
+                            "driverDepartment" to "—",
+                            "updatedAt" to now
+                        )
+                    )
+                    opCount++
+                    commitBatchIfNeeded()
+                }
+            } else {
+                // No passengers ever booked: safe to delete completely
+                currentBatch.delete(rideRef)
+                opCount++
+                commitBatchIfNeeded()
+            }
+        }
+
+        // 3. Rides where targetUser was PASSENGER
+        val passengerReqsSnap = db.collection("rideRequests").whereEqualTo("passengerId", targetUid).get().await()
+        for (reqDoc in passengerReqsSnap.documents) {
+            val rideId = reqDoc.getString("rideId").orEmpty()
+            currentBatch.delete(reqDoc.reference)
+            opCount++
+            commitBatchIfNeeded()
+
+            if (rideId.isNotBlank()) {
+                currentBatch.update(
+                    db.collection("rides").document(rideId),
+                    "acceptedPassengerIds", FieldValue.arrayRemove(targetUid),
+                    "completedPassengerIds", FieldValue.arrayRemove(targetUid)
+                )
+                opCount++
+                commitBatchIfNeeded()
+            }
+        }
+
+        // 4. Passenger needs posted by targetUser
+        val needsSnap = db.collection("passengerNeeds").whereEqualTo("passengerId", targetUid).get().await()
+        for (needDoc in needsSnap.documents) {
+            currentBatch.delete(needDoc.reference)
+            opCount++
+            commitBatchIfNeeded()
+        }
+
+        // 5. Active passenger exclusivity lock
+        currentBatch.delete(db.collection("activePassengerRides").document(targetUid))
+        opCount++
+        commitBatchIfNeeded()
+
+        // 6. CO2 records where targetUser was driver
+        val co2Snap = db.collection("co2Records").whereEqualTo("driverId", targetUid).get().await()
+        for (co2Doc in co2Snap.documents) {
+            currentBatch.delete(co2Doc.reference)
+            opCount++
+            commitBatchIfNeeded()
+        }
+
+        // 7. Account handling (Delete Account vs Delete Data Only)
+        if (deleteAccount) {
+            // Delete user document
+            currentBatch.delete(db.collection("users").document(targetUid))
+            opCount++
+            commitBatchIfNeeded()
+
+            // Delete employeeRegistry document
+            if (targetUser.employeeId.isNotBlank()) {
+                currentBatch.delete(db.collection("employeeRegistry").document(targetUser.employeeId.uppercase().trim()))
+                opCount++
+                commitBatchIfNeeded()
+            }
+        } else {
+            // Keep account, reset personal counters to 0
+            currentBatch.update(
+                db.collection("users").document(targetUid),
+                mapOf(
+                    "totalCo2SavedKg" to 0.0,
+                    "totalCompletedRides" to 0,
+                    "updatedAt" to now
+                )
+            )
+            opCount++
+            commitBatchIfNeeded()
+        }
+
+        if (opCount > 0) {
+            currentBatch.commit().await()
+        }
+
+        // 8. Remove targetUser from leaderboard if listed
+        try {
+            val leaderboardDoc = db.collection("systemConfig").document("leaderboard").get().await()
+            if (leaderboardDoc.exists()) {
+                @Suppress("UNCHECKED_CAST")
+                val entries = leaderboardDoc.get("entries") as? List<Map<String, Any>>
+                if (entries != null && entries.any { it["uid"] == targetUid }) {
+                    val filtered = entries.filter { it["uid"] != targetUid }
+                    db.collection("systemConfig").document("leaderboard").update(
+                        mapOf(
+                            "entries" to filtered,
+                            "updatedAt" to now
+                        )
+                    ).await()
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 9. Update management report
+        try {
+            recalculateAndPersistManagementReport()
+        } catch (_: Exception) {}
+
+        // 10. Audit log
+        val auditAction = if (deleteAccount) AuditLog.ACTION_DELETE_USER_AND_ACCOUNT else AuditLog.ACTION_DELETE_USER_DATA_ONLY
+        val auditId = "${now}_user_delete_${targetUid}"
+        val auditLog = AuditLog(
+            auditId = auditId,
+            adminUid = adminUser.uid,
+            adminName = adminUser.name,
+            adminEmail = adminUser.email,
+            targetUid = targetUid,
+            targetName = targetUser.name,
+            targetEmail = targetUser.email,
+            action = auditAction,
+            reason = (reason.trim().ifBlank { if (deleteAccount) "User requested complete erasure (Data + Account)" else "User requested data deletion (Account retained)" }) +
+                    " [DriverRides: ${preview.ridesAsDriverCount}, PassengerBookings: ${preview.bookingsAsPassengerCount}, Needs: ${preview.passengerNeedsCount}, PassengerRidesAnonymized: ${preview.ridesAnonymizedForPassengersCount}]",
+            timestamp = now
+        )
+        try {
+            db.collection("auditLogs").document(auditId).set(auditLog).await()
+        } catch (e: Exception) {
+            Log.e("AdminRepository", "Failed to write audit log for user deletion", e)
+        }
+
+        preview
+    }
 }
+
+enum class GlobalResetType {
+    RIDES_ONLY,
+    ALL_INCLUDING_USERS_EXCEPT_CURRENT_ADMIN,
+    ALL_EXCEPT_ADMIN_ACCOUNTS
+}
+
+data class GlobalResetPreview(
+    val ridesCount: Int,
+    val bookingsCount: Int,
+    val passengerNeedsCount: Int,
+    val userAccountsCount: Int
+)
+
+data class UserDataDeletionPreview(
+    val targetUid: String,
+    val targetName: String,
+    val ridesAsDriverCount: Int,
+    val bookingsAsPassengerCount: Int,
+    val passengerNeedsCount: Int,
+    val ridesAnonymizedForPassengersCount: Int,
+    val isAccountDeleted: Boolean
+)

@@ -41,7 +41,7 @@ installations.
    • App Title, Short Description, and Full Store Listing Description.
    • Target SDK: 36 (Android 16), Min SDK: 24 (Android 7.0).
    • Application ID: com.aistudio.carpool.kjqxcv
-   • Version Code: 4, Version Name: 4.0.
+   • Version Code: 5, Version Name: 5.0.
    • Full list of declared permissions and explanations for Data Safety declarations.
 
 7. HOW_TO_UPLOAD_TO_PLAY_STORE.md
@@ -53,9 +53,21 @@ installations.
    • Required for Firebase Authentication (Google Sign-In and Phone/SMS verification).
 
 --------------------------------------------------------------------------------
-2. RELEASE NOTES FOR THIS VERSION (v4.0 / VersionCode 4)
+2. RELEASE NOTES FOR THIS VERSION (v5.0 / VersionCode 5)
 --------------------------------------------------------------------------------
-Production release v4.0 of TravelBuddy corporate carpool platform:
+Production release v5.0 of TravelBuddy corporate carpool platform:
+• Admin Data Management Section (Pre-Launch Global Reset & User Data Erasure):
+  - Part 1: Global Reset with 3 Separate Actions:
+    1. Clear Rides Data Only: Wipes all rides, bookings, needs, and history. Preserves all user accounts.
+    2. Clear Everything Including User Accounts: Deletes all rides data AND all user accounts except current admin.
+    3. Clear Everything Except Admin Accounts: Deletes all rides data and all non-admin user accounts; preserves all admin accounts.
+    • "Also remove admin's data (keep admin account)" toggle: when checked, wipes admin's rides/bookings while NEVER deleting the admin account/role.
+  - Part 2: Per-User Data Deletion:
+    • Search and select any user to wipe their rides given and taken.
+    • Passenger History Preservation: If the deleted user was a driver with booked passengers, the ride and bookings stay intact for passengers with driver details anonymized ("Former Colleague"). Unbooked rides are safely deleted.
+    • Options: "Delete data only (keep account)" or "Delete data + account (complete profile & employee ID erasure)".
+  - Exact Record Confirmation Popups: Modal dialog dynamically pre-calculates and states exact counts before any delete. Cancel is the default, easiest option to tap.
+  - Non-Negotiable Security: Server-side rules enforce admin-only access (403 PERMISSION_DENIED for non-admins). Admins cannot delete their own account. All actions execute in atomic batches and log to permanent immutable 'auditLogs'.
 • Admin Reports Local Storage Caching & On-Demand Refresh:
   - Reports table data is loaded directly from local device cache (ReportCacheManager) on launch, costing exactly 0 Firestore reads.
   - "Last updated: [Date & Time]" timestamp header card displays when data was last synchronized.

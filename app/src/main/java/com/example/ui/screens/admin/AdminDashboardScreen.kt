@@ -30,6 +30,9 @@ import com.example.data.model.Ride
 import com.example.data.model.RideRequest
 import com.example.data.model.User
 import com.example.data.repository.AdminRepository
+import com.example.data.repository.GlobalResetPreview
+import com.example.data.repository.GlobalResetType
+import com.example.data.repository.UserDataDeletionPreview
 import com.example.ui.components.ErrorContainer
 import com.example.ui.theme.*
 import com.example.util.ManagementReportRow
@@ -75,14 +78,31 @@ fun AdminDashboardScreen(
     val pendingUsers by adminRepository.getPendingApprovalsFlow().collectAsState(initial = emptyList())
     val pendingApprovalsCount = pendingUsers.size
     val tabs = if (pendingApprovalsCount > 0) {
-        listOf("Overview", "Pending ($pendingApprovalsCount)", "Members", "Reports", "Analytics", "Audit Logs", "Settings")
+        listOf("Overview", "Pending ($pendingApprovalsCount)", "Members", "Reports", "Analytics", "Audit Logs", "Settings", "Data Management")
     } else {
-        listOf("Overview", "Pending", "Members", "Reports", "Analytics", "Audit Logs", "Settings")
+        listOf("Overview", "Pending", "Members", "Reports", "Analytics", "Audit Logs", "Settings", "Data Management")
     }
 
     var search by remember { mutableStateOf("") }
     var memberStatusFilter by remember { mutableStateOf("All") }
     var statusMessage by remember { mutableStateOf<String?>(null) }
+
+    // Data Management States
+    var removeAdminDataOnReset by remember { mutableStateOf(false) }
+    var pendingGlobalResetType by remember { mutableStateOf<GlobalResetType?>(null) }
+    var globalResetPreview by remember { mutableStateOf<GlobalResetPreview?>(null) }
+    var isCalculatingResetPreview by remember { mutableStateOf(false) }
+    var isExecutingReset by remember { mutableStateOf(false) }
+    var globalResetReason by remember { mutableStateOf("") }
+
+    var selectedUserForDeletion by remember { mutableStateOf<User?>(null) }
+    var deleteUserAccountOption by remember { mutableStateOf(false) }
+    var userDeletionPreview by remember { mutableStateOf<UserDataDeletionPreview?>(null) }
+    var isCalculatingUserPreview by remember { mutableStateOf(false) }
+    var isExecutingUserDeletion by remember { mutableStateOf(false) }
+    var userSearchQuery by remember { mutableStateOf("") }
+    var userDeletionReason by remember { mutableStateOf("") }
+    var showUserDeletionConfirmDialog by remember { mutableStateOf(false) }
 
     // Dialog States
     var targetMemberAction by remember { mutableStateOf<User?>(null) }
@@ -698,6 +718,329 @@ fun AdminDashboardScreen(
                 )
             }
         }
+    }
+
+    // ----------------------------------------------------
+    // DATA MANAGEMENT CONFIRMATION DIALOGS
+    // ----------------------------------------------------
+
+    pendingGlobalResetType?.let { resetType ->
+        val resetTypeName = when (resetType) {
+            GlobalResetType.RIDES_ONLY -> "Clear Rides Data Only"
+            GlobalResetType.ALL_INCLUDING_USERS_EXCEPT_CURRENT_ADMIN -> "Clear Everything Including User Accounts"
+            GlobalResetType.ALL_EXCEPT_ADMIN_ACCOUNTS -> "Clear Everything Except Admin Accounts"
+        }
+
+        AlertDialog(
+            onDismissRequest = {
+                if (!isExecutingReset) {
+                    pendingGlobalResetType = null
+                    globalResetPreview = null
+                    globalResetReason = ""
+                }
+            },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Rounded.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(26.dp)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = "Confirm: $resetTypeName",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 18.sp
+                    )
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (isCalculatingResetPreview) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(12.dp))
+                            Text("Calculating affected database records...", fontSize = 13.sp, color = TextSecondary)
+                        }
+                    } else if (globalResetPreview != null) {
+                        val preview = globalResetPreview!!
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.08f)),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    "This action will permanently delete:",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                                Text("• ${preview.ridesCount} rides and driver listings", fontSize = 12.5.sp, color = TextPrimary)
+                                Text("• ${preview.bookingsCount} ride bookings & requests", fontSize = 12.5.sp, color = TextPrimary)
+                                Text("• ${preview.passengerNeedsCount} passenger commute needs", fontSize = 12.5.sp, color = TextPrimary)
+                                if (preview.userAccountsCount > 0) {
+                                    Text("• ${preview.userAccountsCount} user accounts and employee IDs", fontSize = 12.5.sp, color = TextPrimary, fontWeight = FontWeight.Bold)
+                                } else {
+                                    Text("• 0 user accounts (all employee logins preserved)", fontSize = 12.5.sp, color = PrimaryDark)
+                                }
+                                Text(
+                                    if (removeAdminDataOnReset) "• Administrator's own ride history: INCLUDED (wiped)" else "• Administrator's own ride history: KEPT",
+                                    fontSize = 12.sp,
+                                    color = TextSecondary
+                                )
+                                Text(
+                                    "• Current admin account (${user.email}): NEVER DELETED",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Success
+                                )
+                            }
+                        }
+
+                        Text(
+                            "This cannot be undone. All cumulative counters, statistics, and leaderboards will be reset to 0.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Medium
+                        )
+
+                        OutlinedTextField(
+                            value = globalResetReason,
+                            onValueChange = { globalResetReason = it },
+                            label = { Text("Reason for reset (audit log)") },
+                            placeholder = { Text("e.g. Pre-launch data cleanup") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+
+                        if (isExecutingReset) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(top = 4.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Executing atomic data wipe in Firestore...", fontSize = 12.sp, color = TextSecondary)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = !isCalculatingResetPreview && !isExecutingReset && globalResetPreview != null,
+                    onClick = {
+                        val preview = globalResetPreview ?: return@Button
+                        val reason = globalResetReason
+                        isExecutingReset = true
+                        scope.launch {
+                            adminRepository.executeGlobalReset(user, resetType, removeAdminDataOnReset, reason)
+                                .onSuccess {
+                                    ReportCacheManager.clearCache(context)
+                                    cachedReportRows = emptyList()
+                                    reportLastUpdatedTimestamp = 0L
+                                    isExecutingReset = false
+                                    pendingGlobalResetType = null
+                                    globalResetPreview = null
+                                    globalResetReason = ""
+                                    statusMessage = "Data wipe complete: deleted ${preview.ridesCount} rides and ${preview.bookingsCount} bookings. App starts with zero rides."
+                                    Toast.makeText(context, statusMessage, Toast.LENGTH_LONG).show()
+                                }
+                                .onFailure {
+                                    isExecutingReset = false
+                                    statusMessage = "Data reset failed: ${it.message}"
+                                    Toast.makeText(context, statusMessage, Toast.LENGTH_LONG).show()
+                                }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Confirm Wipe")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    enabled = !isExecutingReset,
+                    onClick = {
+                        pendingGlobalResetType = null
+                        globalResetPreview = null
+                        globalResetReason = ""
+                    }
+                ) {
+                    Text("Cancel", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
+    if (showUserDeletionConfirmDialog && selectedUserForDeletion != null) {
+        val target = selectedUserForDeletion!!
+        AlertDialog(
+            onDismissRequest = {
+                if (!isExecutingUserDeletion) {
+                    showUserDeletionConfirmDialog = false
+                    userDeletionPreview = null
+                    userDeletionReason = ""
+                }
+            },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Rounded.DeleteForever,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(26.dp)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = if (deleteUserAccountOption) "Delete User & Data" else "Delete User Data Only",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 18.sp
+                    )
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (isCalculatingUserPreview) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(12.dp))
+                            Text("Calculating user records...", fontSize = 13.sp, color = TextSecondary)
+                        }
+                    } else if (userDeletionPreview != null) {
+                        val preview = userDeletionPreview!!
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.08f)),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    "Target User: ${target.name}",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.5.sp,
+                                    color = TextPrimary
+                                )
+                                Text("${target.department} • ${target.email.ifBlank { target.employeeId }}", fontSize = 12.sp, color = TextSecondary)
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "Records affected for this user:",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.5.sp,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                                Text("• ${preview.ridesAsDriverCount} rides created as driver", fontSize = 12.sp, color = TextPrimary)
+                                Text("• ${preview.bookingsAsPassengerCount} bookings taken as passenger", fontSize = 12.sp, color = TextPrimary)
+                                Text("• ${preview.passengerNeedsCount} commute needs posted", fontSize = 12.sp, color = TextPrimary)
+                                if (preview.ridesAnonymizedForPassengersCount > 0) {
+                                    Surface(
+                                        color = Primary.copy(alpha = 0.12f),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text(
+                                            "Note: ${preview.ridesAnonymizedForPassengersCount} shared rides had other passenger bookings. Those passengers' history is preserved; driver details will show as 'Former Colleague'.",
+                                            modifier = Modifier.padding(6.dp),
+                                            fontSize = 11.5.sp,
+                                            color = PrimaryDark,
+                                            lineHeight = 15.sp
+                                        )
+                                    }
+                                }
+                                Text(
+                                    if (deleteUserAccountOption) "• User Account: PERMANENTLY REMOVED from Firestore" else "• User Account: KEPT (login active, stats reset to 0)",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (deleteUserAccountOption) MaterialTheme.colorScheme.error else PrimaryDark
+                                )
+                            }
+                        }
+
+                        Text("This cannot be undone.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium)
+
+                        OutlinedTextField(
+                            value = userDeletionReason,
+                            onValueChange = { userDeletionReason = it },
+                            label = { Text("Reason (audit log)") },
+                            placeholder = { Text(if (deleteUserAccountOption) "e.g. Employee offboarded / data wipe requested" else "e.g. User requested ride history reset") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+
+                        if (isExecutingUserDeletion) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(top = 4.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Deleting user records in Firestore...", fontSize = 12.sp, color = TextSecondary)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = !isCalculatingUserPreview && !isExecutingUserDeletion && userDeletionPreview != null,
+                    onClick = {
+                        val reason = userDeletionReason
+                        val isDeleteAcc = deleteUserAccountOption
+                        isExecutingUserDeletion = true
+                        scope.launch {
+                            adminRepository.executePerUserDataDeletion(user, target, isDeleteAcc, reason)
+                                .onSuccess { preview ->
+                                    ReportCacheManager.clearCache(context)
+                                    isExecutingUserDeletion = false
+                                    showUserDeletionConfirmDialog = false
+                                    userDeletionPreview = null
+                                    userDeletionReason = ""
+                                    selectedUserForDeletion = null
+                                    statusMessage = if (isDeleteAcc) {
+                                        "${target.name} and all data (${preview.ridesAsDriverCount} rides, ${preview.bookingsAsPassengerCount} bookings) have been permanently deleted."
+                                    } else {
+                                        "Data for ${target.name} has been deleted (${preview.ridesAsDriverCount} rides, ${preview.bookingsAsPassengerCount} bookings). Account kept."
+                                    }
+                                    Toast.makeText(context, statusMessage, Toast.LENGTH_SHORT).show()
+                                }
+                                .onFailure {
+                                    isExecutingUserDeletion = false
+                                    statusMessage = "Deletion failed: ${it.message}"
+                                    Toast.makeText(context, statusMessage, Toast.LENGTH_LONG).show()
+                                }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text(if (deleteUserAccountOption) "Delete User & Data" else "Delete Data Only")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    enabled = !isExecutingUserDeletion,
+                    onClick = {
+                        showUserDeletionConfirmDialog = false
+                        userDeletionPreview = null
+                        userDeletionReason = ""
+                    }
+                ) {
+                    Text("Cancel", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
     }
 
     Scaffold(containerColor = Background) { innerPadding ->
@@ -1489,6 +1832,387 @@ fun AdminDashboardScreen(
                                 colors = ButtonDefaults.buttonColors(containerColor = Primary)
                             ) {
                                 Text("Save Parameters", color = Color.White, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+
+                    // =========================================================
+                    // TAB 7: DATA MANAGEMENT
+                    // =========================================================
+                    7 -> {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Rounded.Security, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(28.dp))
+                                Spacer(Modifier.width(12.dp))
+                                Column {
+                                    Text("Admin Data Management", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.error)
+                                    Text(
+                                        "Wipe pre-launch test data or process user data deletion requests. All actions are verified with atomic transactions and logged in audit trail.",
+                                        fontSize = 12.sp,
+                                        color = TextPrimary,
+                                        lineHeight = 16.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(20.dp))
+                        SectionTitle("PART 1: GLOBAL RESET (PRE-LAUNCH CLEANUP)")
+
+                        InfoCard {
+                            // Toggle: "Also remove admin's data (keep admin account)"
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { removeAdminDataOnReset = !removeAdminDataOnReset },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = removeAdminDataOnReset,
+                                    onCheckedChange = { removeAdminDataOnReset = it }
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Column {
+                                    Text("Also remove admin's data (keep admin account)", fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = TextPrimary)
+                                    Text(
+                                        "When ticked, the admin's own rides, bookings, and history are deleted too, but the admin account itself (login, role) is NEVER deleted.",
+                                        fontSize = 11.5.sp,
+                                        color = TextSecondary,
+                                        lineHeight = 15.sp
+                                    )
+                                }
+                            }
+
+                            Spacer(Modifier.height(16.dp))
+                            HorizontalDivider(color = Outline.copy(alpha = 0.25f))
+                            Spacer(Modifier.height(16.dp))
+
+                            // Action 1: Clear rides data only
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = Surface),
+                                border = BorderStroke(1.dp, Warning.copy(alpha = 0.6f))
+                            ) {
+                                Column(Modifier.padding(14.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Rounded.DirectionsCar, contentDescription = null, tint = Warning, modifier = Modifier.size(20.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("1. Clear Rides Data Only", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        "Deletes all rides, bookings, and ride history. Keeps all user accounts intact. Resets community metrics.",
+                                        fontSize = 12.sp,
+                                        color = TextSecondary
+                                    )
+                                    Spacer(Modifier.height(10.dp))
+                                    Button(
+                                        onClick = {
+                                            pendingGlobalResetType = GlobalResetType.RIDES_ONLY
+                                            isCalculatingResetPreview = true
+                                            scope.launch {
+                                                adminRepository.previewGlobalReset(user, GlobalResetType.RIDES_ONLY, removeAdminDataOnReset)
+                                                    .onSuccess { preview ->
+                                                        globalResetPreview = preview
+                                                        isCalculatingResetPreview = false
+                                                    }
+                                                    .onFailure {
+                                                        isCalculatingResetPreview = false
+                                                        pendingGlobalResetType = null
+                                                        statusMessage = "Preview failed: ${it.message}"
+                                                    }
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Warning),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth().height(42.dp)
+                                    ) {
+                                        Text("Clear Rides Data Only", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    }
+                                }
+                            }
+
+                            Spacer(Modifier.height(14.dp))
+
+                            // Action 2: Clear everything including all user accounts
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = Surface),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
+                            ) {
+                                Column(Modifier.padding(14.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Rounded.DeleteSweep, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("2. Clear Everything Including User Accounts", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.error)
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        "Deletes all rides data AND all user accounts, except the current admin account (${user.email}).",
+                                        fontSize = 12.sp,
+                                        color = TextSecondary
+                                    )
+                                    Spacer(Modifier.height(10.dp))
+                                    Button(
+                                        onClick = {
+                                            pendingGlobalResetType = GlobalResetType.ALL_INCLUDING_USERS_EXCEPT_CURRENT_ADMIN
+                                            isCalculatingResetPreview = true
+                                            scope.launch {
+                                                adminRepository.previewGlobalReset(user, GlobalResetType.ALL_INCLUDING_USERS_EXCEPT_CURRENT_ADMIN, removeAdminDataOnReset)
+                                                    .onSuccess { preview ->
+                                                        globalResetPreview = preview
+                                                        isCalculatingResetPreview = false
+                                                    }
+                                                    .onFailure {
+                                                        isCalculatingResetPreview = false
+                                                        pendingGlobalResetType = null
+                                                        statusMessage = "Preview failed: ${it.message}"
+                                                    }
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth().height(42.dp)
+                                    ) {
+                                        Text("Clear Everything Except Current Admin", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    }
+                                }
+                            }
+
+                            Spacer(Modifier.height(14.dp))
+
+                            // Action 3: Clear everything except admin accounts
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = Surface),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.45f))
+                            ) {
+                                Column(Modifier.padding(14.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Rounded.SupervisorAccount, contentDescription = null, tint = PrimaryDark, modifier = Modifier.size(20.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("3. Clear Everything Except Admin Accounts", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        "Deletes all rides data and all non-admin user accounts; keeps all administrator accounts untouched.",
+                                        fontSize = 12.sp,
+                                        color = TextSecondary
+                                    )
+                                    Spacer(Modifier.height(10.dp))
+                                    Button(
+                                        onClick = {
+                                            pendingGlobalResetType = GlobalResetType.ALL_EXCEPT_ADMIN_ACCOUNTS
+                                            isCalculatingResetPreview = true
+                                            scope.launch {
+                                                adminRepository.previewGlobalReset(user, GlobalResetType.ALL_EXCEPT_ADMIN_ACCOUNTS, removeAdminDataOnReset)
+                                                    .onSuccess { preview ->
+                                                        globalResetPreview = preview
+                                                        isCalculatingResetPreview = false
+                                                    }
+                                                    .onFailure {
+                                                        isCalculatingResetPreview = false
+                                                        pendingGlobalResetType = null
+                                                        statusMessage = "Preview failed: ${it.message}"
+                                                    }
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryDark),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth().height(42.dp)
+                                    ) {
+                                        Text("Clear Everything Except Admin Accounts", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(24.dp))
+                        SectionTitle("PART 2: PER-USER DATA DELETION")
+
+                        InfoCard {
+                            Text(
+                                "Search and select a user to delete their personal rides and records. If the user gave a ride that others booked, passengers' history remains intact with the deleted user's personal details removed.",
+                                fontSize = 12.sp,
+                                color = TextSecondary,
+                                lineHeight = 16.sp
+                            )
+                            Spacer(Modifier.height(12.dp))
+
+                            OutlinedTextField(
+                                value = userSearchQuery,
+                                onValueChange = { userSearchQuery = it },
+                                label = { Text("Search User by Name, Email, or Emp ID") },
+                                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                                trailingIcon = {
+                                    if (userSearchQuery.isNotBlank()) {
+                                        IconButton(onClick = { userSearchQuery = "" }) {
+                                            Icon(Icons.Rounded.Clear, contentDescription = null)
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+
+                            Spacer(Modifier.height(10.dp))
+
+                            // Search Results list
+                            val filteredUsers = remember(users, userSearchQuery) {
+                                val q = userSearchQuery.trim().lowercase()
+                                if (q.isBlank()) emptyList()
+                                else users.filter { u ->
+                                    u.uid != user.uid && (
+                                        u.name.lowercase().contains(q) ||
+                                        u.email.lowercase().contains(q) ||
+                                        u.employeeId.lowercase().contains(q) ||
+                                        u.department.lowercase().contains(q)
+                                    )
+                                }.take(5)
+                            }
+
+                            if (filteredUsers.isNotEmpty()) {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    filteredUsers.forEach { candidate ->
+                                        val isSelected = selectedUserForDeletion?.uid == candidate.uid
+                                        Card(
+                                            onClick = { selectedUserForDeletion = candidate },
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = if (isSelected) Primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                                            ),
+                                            border = if (isSelected) BorderStroke(1.5.dp, Primary) else null,
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Row(
+                                                Modifier.fillMaxWidth().padding(10.dp),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column {
+                                                    Text(candidate.name.ifBlank { "User" }, fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
+                                                    Text("${candidate.department} • ${candidate.email.ifBlank { candidate.employeeId }}", fontSize = 11.5.sp, color = TextSecondary)
+                                                }
+                                                if (isSelected) {
+                                                    Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = Primary, modifier = Modifier.size(20.dp))
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Spacer(Modifier.height(12.dp))
+                            }
+
+                            // Selected User Action Panel
+                            selectedUserForDeletion?.let { target ->
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = Surface),
+                                    border = BorderStroke(1.dp, Primary.copy(alpha = 0.5f)),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column {
+                                                Text(target.name.ifBlank { "Selected User" }, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary)
+                                                Text("Email: ${target.email} • Emp ID: ${target.employeeId}", fontSize = 12.sp, color = TextSecondary)
+                                            }
+                                            IconButton(onClick = { selectedUserForDeletion = null }) {
+                                                Icon(Icons.Rounded.Close, contentDescription = "Deselect", tint = TextTertiary)
+                                            }
+                                        }
+
+                                        HorizontalDivider(color = Outline.copy(alpha = 0.2f))
+
+                                        Text("Deletion Scope:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+
+                                        // Option A: Delete data only
+                                        Card(
+                                            onClick = { deleteUserAccountOption = false },
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = if (!deleteUserAccountOption) Primary.copy(alpha = 0.08f) else Surface
+                                            ),
+                                            border = BorderStroke(1.dp, if (!deleteUserAccountOption) Primary else Outline.copy(alpha = 0.3f)),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                RadioButton(
+                                                    selected = !deleteUserAccountOption,
+                                                    onClick = { deleteUserAccountOption = false }
+                                                )
+                                                Spacer(Modifier.width(6.dp))
+                                                Column {
+                                                    Text("Delete Data Only (Keep Account)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                                    Text("Wipes rides given, bookings, and needs. Resets CO₂ to 0. Login account stays active.", fontSize = 11.sp, color = TextSecondary)
+                                                }
+                                            }
+                                        }
+
+                                        // Option B: Delete data + account
+                                        Card(
+                                            onClick = { deleteUserAccountOption = true },
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = if (deleteUserAccountOption) MaterialTheme.colorScheme.error.copy(alpha = 0.08f) else Surface
+                                            ),
+                                            border = BorderStroke(1.dp, if (deleteUserAccountOption) MaterialTheme.colorScheme.error else Outline.copy(alpha = 0.3f)),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                RadioButton(
+                                                    selected = deleteUserAccountOption,
+                                                    onClick = { deleteUserAccountOption = true },
+                                                    colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.error)
+                                                )
+                                                Spacer(Modifier.width(6.dp))
+                                                Column {
+                                                    Text("Delete Data + Account", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
+                                                    Text("Permanently erases user profile, employee ID registry, and all rides/bookings.", fontSize = 11.sp, color = TextSecondary)
+                                                }
+                                            }
+                                        }
+
+                                        Spacer(Modifier.height(4.dp))
+
+                                        Button(
+                                            onClick = {
+                                                isCalculatingUserPreview = true
+                                                showUserDeletionConfirmDialog = true
+                                                scope.launch {
+                                                    adminRepository.previewUserDeletion(user, target, deleteUserAccountOption)
+                                                        .onSuccess { preview ->
+                                                            userDeletionPreview = preview
+                                                            isCalculatingUserPreview = false
+                                                        }
+                                                        .onFailure {
+                                                            isCalculatingUserPreview = false
+                                                            showUserDeletionConfirmDialog = false
+                                                            statusMessage = "Preview failed: ${it.message}"
+                                                        }
+                                                }
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.fillMaxWidth().height(44.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.DeleteForever, contentDescription = null, modifier = Modifier.size(18.dp))
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(if (deleteUserAccountOption) "Delete User & Data" else "Delete User Data Only", fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
