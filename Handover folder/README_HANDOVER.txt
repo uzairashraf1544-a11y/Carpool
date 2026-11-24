@@ -41,7 +41,7 @@ installations.
    • App Title, Short Description, and Full Store Listing Description.
    • Target SDK: 36 (Android 16), Min SDK: 24 (Android 7.0).
    • Application ID: com.aistudio.carpool.kjqxcv
-   • Version Code: 6, Version Name: 6.0.
+   • Version Code: 5, Version Name: 5.1.
    • Full list of declared permissions and explanations for Data Safety declarations.
 
 7. HOW_TO_UPLOAD_TO_PLAY_STORE.md
@@ -53,9 +53,9 @@ installations.
    • Required for Firebase Authentication (Google Sign-In and Phone/SMS verification).
 
 --------------------------------------------------------------------------------
-2. RELEASE NOTES FOR THIS VERSION (v6.0 / VersionCode 6)
+2. RELEASE NOTES FOR THIS VERSION (v5.1 / VersionCode 5)
 --------------------------------------------------------------------------------
-Production release v6.0 of TravelBuddy corporate carpool platform:
+Production release v5.1 of TravelBuddy corporate carpool platform:
 • Single-Read Bulk Architecture & Extreme Read Optimization:
   - Eliminated full collection queries and real-time listeners across Admin Dashboard.
   - Replaced multi-document scans with a single pre-aggregated Firestore document (`systemConfig/managementReport`) providing all report rows, total community CO2, total driver rides, total passenger trips, and member counts in EXACTLY 1 read.
